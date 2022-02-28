@@ -21,13 +21,18 @@ Open [http://localhost:3030/health](http://localhost:3030/health) to validate yo
 
 To get a scaled down version of an image or video, just make a GET request to your `imgopt` instance providing the desired `width` as a query parameter and the `service` in the URL path.
 The URL structure should look like this:
+
 ```text
 http://localhost:3030/<service>/<image-to-scaledown>?width=<desired-width>
 ```
 
-Let's use [this JPG image](https://ipfs.io/ipfs/bafybeih26pot7dyvqkjabsx75fuypf6cy6derd6tojnfpctja75a2j7uk4)
+In order to, for example, scale down [this JPG image](https://ipfs.io/ipfs/bafybeih26pot7dyvqkjabsx75fuypf6cy6derd6tojnfpctja75a2j7uk4), you should point your browser to:
+```text
+http://localhost:3030/ipfs/bafybeih26pot7dyvqkjabsx75fuypf6cy6derd6tojnfpctja75a2j7uk4?width=600
+```
 
 [Click here to see it in action](http://localhost:3030/ipfs/bafybeih26pot7dyvqkjabsx75fuypf6cy6derd6tojnfpctja75a2j7uk4?width=600)
+
 Change the width to get the image size you want (Use a size from the `allowed_sizes` array in your config file. The following requests with same `width` will be served from cache directly and skip conversion entirely.
 To get the original image remove the `?width=` parameter.
 

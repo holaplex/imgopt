@@ -6,7 +6,7 @@ RUN cargo init
 COPY ./Cargo.toml .
 COPY ./src ./src
 RUN cargo fetch
-COPY os_info-1.3.3 /usr/local/cargo/registry/src/github.com-1ecc6299db9ec823/os_info-1.3.3
+COPY ./docker/os_info-1.3.3 /usr/local/cargo/registry/src/github.com-1ecc6299db9ec823/os_info-1.3.3
 RUN cargo build --release
 
 FROM debian:stable-slim
