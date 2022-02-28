@@ -43,7 +43,7 @@ If you will run `imgopt` from the container image, remember to mount a volume to
 
 ```bash
 mkdir imgopt-data
-docker run -d --network=host -v $(pwd)/imgopt-data:/root/imgopt-data -v $(pwd)/config.toml:/root/config.toml mpwsh/imgopt:0.1.5
+docker run -d --network=host -v $(pwd)/imgopt-data:/root/imgopt-data -v $(pwd)/config.toml:/root/config.toml mpwsh/imgopt:0.1.6
 ```
 ## Customizing your configuration
 The config file is pretty straightforward and all values are commented with a small description for ease of customization.
