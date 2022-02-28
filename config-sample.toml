@@ -1,0 +1,33 @@
+#Possible values -- debug, info, warn, error
+log_level = "info"
+#port for the server to listen on
+port = 3030
+#CPU Threads for actix
+workers = 8
+#timeout when contacting listed services
+req_timeout = 360
+#Limit response size from your services
+max_body_size_bytes = 100000000 # 100 MB
+#For load balancer liveness Probe
+health_endpoint = "/health"
+#User agent should be <name>/<version>
+user_agent = "imgopt/0.1.6"
+#use full path if possible
+storage_path = "imgopt-data"
+
+#Limit which width scaling options are available (optional)
+allowed_sizes = [ 600, 100, 500 ]
+
+#Services
+[[services]]
+name = "ipfs"
+endpoint = "https://ipfs.io/ipfs"
+
+[[services]]
+name = "arweave"
+endpoint = "https://arweave.net"
+
+#Continue adding services ..
+#[[services]]
+#name = "service-name"
+#endpoint = "https://service-url"
