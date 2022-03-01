@@ -34,7 +34,7 @@ http://localhost:3030/ipfs/bafybeih26pot7dyvqkjabsx75fuypf6cy6derd6tojnfpctja75a
 [Click here to see it in action](http://localhost:3030/ipfs/bafybeih26pot7dyvqkjabsx75fuypf6cy6derd6tojnfpctja75a2j7uk4?width=600)
 
 Change the width to get the image size you want (Use a size from the `allowed_sizes` array in your config file. The following requests with same `width` will be served from cache directly and skip conversion entirely.
-To get the original image remove the `?width=` parameter.
+To get the original image **remove** the `?width=` parameter.
 
 `MP4` files work the same way, but those will be converted to `GIF` automatically and then scaled down to the desired `width`.
 
@@ -96,3 +96,7 @@ imgopt
 
 Once everything is setup, you should be able to just execute `./imgopt`.
 The configuration being used is printed on startup when using `log_level = "debug"` to help troubleshooting.
+
+
+# License
+See [LICENSE](LICENSE)
