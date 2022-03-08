@@ -2,6 +2,8 @@ use actix_web::{get, middleware, web, web::Data, App, HttpRequest, HttpResponse,
 use anyhow::Result;
 use awc::{http::header, Client, Connector};
 use image::ImageFormat;
+use retry::delay::Fixed;
+use retry::OperationResult;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use serde_derive::{Deserialize, Serialize};
 use std::env;
@@ -11,7 +13,6 @@ use std::io::prelude::*;
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 use utils::Elapsed;
-
 mod img;
 mod utils;
 
@@ -62,6 +63,7 @@ impl Default for AppConfig {
 #[derive(Deserialize)]
 pub struct Params {
     width: Option<u32>,
+    force: Option<bool>,
 }
 
 async fn get_health_status() -> HttpResponse {
@@ -170,7 +172,7 @@ async fn fetch_image(
         let payload = res
             .body()
             // expected image is larger than default body limit
-            .limit(cfg.max_body_size_bytes) // 60MB
+            .limit(cfg.max_body_size_bytes)
             .await?;
         log::info!(
             "it took {} to download image to memory",
@@ -198,6 +200,7 @@ async fn fetch_image(
     let payload = match content_type.as_ref() {
         "image/jpeg" => img::scaledown_static(&image_data, scale, ImageFormat::Jpeg)?,
         "image/png" => img::scaledown_static(&image_data, scale, ImageFormat::Png)?,
+        "image/webp" => img::scaledown_static(&image_data, scale, ImageFormat::WebP)?,
         "image/gif" => img::scaledown_gif(&image_path, &mod_image_path, scale)?,
         "video/mp4" => {
             content_type = mime::IMAGE_GIF;

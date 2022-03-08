@@ -875,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "imgopt"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -887,6 +887,7 @@ dependencies = [
  "image",
  "log",
  "mime",
+ "retry",
  "rustls",
  "serde",
  "serde_derive",
@@ -1391,6 +1392,15 @@ name = "regex-syntax"
 version = "0.6.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f497285884f3fcff424ffc933e56d7cbca511def0c9831a7f9b5f6153e3cc89b"
+
+[[package]]
+name = "retry"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac95c60a949a63fd2822f4964939662d8f2c16c4fa0624fd954bc6e703b9a3f6"
+dependencies = [
+ "rand",
+]
 
 [[package]]
 name = "ring"

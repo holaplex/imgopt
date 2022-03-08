@@ -45,14 +45,15 @@ pub fn guess_content_type(data: &[u8]) -> Result<Mime> {
     //open image and try to guess image type
     let image_type = image::guess_format(data).unwrap_or_else(|e| {
         log::error!(
-            "Error while detecting format: {}. Using fallback format: WebP",
+            "Error while detecting format: {}. Using fallback format: OpenExr",
             e
         );
-        ImageFormat::WebP
+        ImageFormat::OpenExr
     });
     log::info!("guessed image format: {:?}", image_type);
     let content_type = match image_type {
         ImageFormat::Jpeg => mime::IMAGE_JPEG,
+        ImageFormat::WebP => mime::IMAGE_PNG,
         ImageFormat::Png => mime::IMAGE_PNG,
         ImageFormat::Gif => mime::IMAGE_GIF,
         _ => {

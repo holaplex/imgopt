@@ -47,6 +47,10 @@ pub fn scaledown_static(data: &Vec<u8>, width: u32, format: ImageFormat) -> Resu
         log::warn!("falling back to base image from storage");
         return Ok(data.clone());
     }
+    let format = match format {
+        ImageFormat::WebP => ImageFormat::Png,
+        _ => format,
+    };
 
     let mut buff = Cursor::new(Vec::new());
     img.thumbnail(width, width).write_to(&mut buff, format)?;
