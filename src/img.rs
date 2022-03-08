@@ -1,6 +1,7 @@
 use crate::utils::*;
 use anyhow::Result;
 use cmd_lib::*;
+use image::imageops::FilterType;
 use image::io::Reader;
 use image::{DynamicImage, ImageFormat};
 use std::io::Cursor;
@@ -51,9 +52,10 @@ pub fn scaledown_static(data: &Vec<u8>, width: u32, format: ImageFormat) -> Resu
         ImageFormat::WebP => ImageFormat::Png,
         _ => format,
     };
-
     let mut buff = Cursor::new(Vec::new());
-    img.thumbnail(width, width).write_to(&mut buff, format)?;
+    //img.thumbnail(width, width).write_to(&mut buff, format)?;
+    img.resize_to_fill(width, width, FilterType::Nearest)
+        .write_to(&mut buff, format)?;
     log::info!("Resized to {} px in {}", width, Elapsed::from(&start));
     Ok(buff.into_inner())
 }
