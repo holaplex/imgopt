@@ -18,6 +18,9 @@ storage_path = "imgopt-data"
 #Limit which width scaling options are available (optional)
 allowed_sizes = [ 600, 100, 500 ]
 
+#Skip certain images from processing (optional)
+skip_list = []
+
 #Services
 [[services]]
 name = "ipfs"

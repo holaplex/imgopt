@@ -28,6 +28,7 @@ struct AppConfig {
     storage_path: String,
     allowed_sizes: Option<Vec<u32>>,
     services: Vec<Service>,
+    skip_list: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -49,6 +50,7 @@ impl Default for AppConfig {
             port: 3030,
             workers: 8,
             req_timeout: 15,
+            skip_list: None,
             max_body_size_bytes: 60000000,
             log_level: String::from("debug"),
             storage_path: String::from("storage"),
@@ -196,6 +198,22 @@ async fn fetch_image(
             .content_type(content_type)
             .body(image_data));
     }
+
+    if cfg.skip_list.is_some() {
+        let file_validation: Vec<String> = cfg
+            .skip_list
+            .clone()
+            .unwrap()
+            .into_iter()
+            .filter(|i| i == &image)
+            .collect();
+        if !file_validation.is_empty() {
+            log::info!("Skipping image {} from processing", image);
+            return Ok(HttpResponse::Ok()
+                .content_type(content_type)
+                .body(image_data.clone()));
+        };
+    };
     //process the image and return payload
     let payload = match content_type.as_ref() {
         "image/jpeg" => img::scaledown_static(&image_data, scale, ImageFormat::Jpeg)?,
