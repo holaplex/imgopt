@@ -1,9 +1,7 @@
 use actix_web::{get, middleware, web, web::Data, App, HttpRequest, HttpResponse, HttpServer};
 use anyhow::Result;
-use awc::{http::header, Client, Connector};
+use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
 use image::ImageFormat;
-use retry::delay::Fixed;
-use retry::OperationResult;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use serde_derive::{Deserialize, Serialize};
 use std::env;
@@ -31,6 +29,11 @@ struct AppConfig {
     skip_list: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone)]
+struct Object {
+    data: Vec<u8>,
+    content_type: mime::Mime,
+}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Service {
     name: String,
@@ -130,11 +133,12 @@ async fn fetch_image(
         cfg.storage_path, service.name, scale, image
     );
 
-    if scale != 0 {
+    let force_download = params.force.unwrap_or(false);
+    if scale != 0 && force_download != true {
         //Try opening from mod image path first - if file is not found continue
         if std::path::Path::new(&mod_image_path).exists() {
             let image_data = utils::read_from_file(&mod_image_path)?;
-            let content_type = utils::guess_content_type(&image_data)?;
+            let content_type = utils::guess_content_type(&mod_image_path)?;
             return Ok(HttpResponse::Ok()
                 .content_type(content_type)
                 .body(image_data));
@@ -143,10 +147,21 @@ async fn fetch_image(
 
     //try to get base image from S3  || download if not found
     let image_path = format!("{}/base/{}/{}", cfg.storage_path, service.name, image);
-    let image_data: Vec<u8> = if std::path::Path::new(&image_path).exists() {
+    let mut obj: Object = if std::path::Path::new(&image_path).exists() && force_download != true {
         log::info!("Found image in storage, reading file");
-        utils::read_from_file(&image_path)?
+        let image_data = utils::read_from_file(&image_path)?;
+        Object {
+            data: image_data.clone(),
+            content_type: utils::guess_content_type(&image_path)?,
+        }
     } else {
+        if force_download {
+            log::info!(
+                "Detected force param: Forcing image download: {}/{}",
+                service.name,
+                image
+            );
+        }
         //Try download
         let start = Instant::now();
         log::info!("Trying to download image from: {}", uri);
@@ -181,22 +196,38 @@ async fn fetch_image(
             Elapsed::from(&start)
         );
         //response to bytes
-        let data: Vec<u8> = payload.as_ref().to_vec();
+        let mut data: Vec<u8> = payload.as_ref().to_vec();
+        //retrieving mime type from headers
+        let headers = res.headers();
+
+        let mut content_type = match headers.get(CONTENT_TYPE) {
+            None => {
+                log::warn!("The response does not contain a Content-Type header.");
+                "text/plain".parse::<mime::Mime>().unwrap()
+            }
+            Some(x) => x.to_str()?.parse::<mime::Mime>().unwrap(),
+        };
+        log::info!("got mime from headers: {}", content_type);
         //Saving downloaded image in S3
         let start = Instant::now();
+        //convert to png and save as base if mime type = svg
+        if content_type == mime::IMAGE_SVG {
+            let converted = img::svg_to_png(&data)?;
+            data = converted;
+            content_type = mime::IMAGE_PNG;
+        };
         let mut file = File::create(&image_path)?;
         file.write_all(&data).unwrap();
         log::info!("it took {} to save image to disk", Elapsed::from(&start));
         //return image as bytes to use from mem
-        data
+        Object { data, content_type }
     };
 
-    let mut content_type = utils::guess_content_type(&image_data)?;
     if scale == 0 {
         //send base image if scale is 0
         return Ok(HttpResponse::Ok()
-            .content_type(content_type)
-            .body(image_data));
+            .content_type(obj.content_type)
+            .body(obj.data));
     }
 
     if cfg.skip_list.is_some() {
@@ -210,38 +241,49 @@ async fn fetch_image(
         if !file_validation.is_empty() {
             log::info!("Skipping image {} from processing", image);
             return Ok(HttpResponse::Ok()
-                .content_type(content_type)
-                .body(image_data.clone()));
+                .content_type(obj.content_type)
+                .body(obj.data.clone()));
         };
     };
     //process the image and return payload
-    let payload = match content_type.as_ref() {
-        "image/jpeg" => img::scaledown_static(&image_data, scale, ImageFormat::Jpeg)?,
-        "image/png" => img::scaledown_static(&image_data, scale, ImageFormat::Png)?,
-        "image/webp" => img::scaledown_static(&image_data, scale, ImageFormat::WebP)?,
+    let payload = match obj.content_type.as_ref() {
+        "image/jpeg" => img::scaledown_static(&obj.data, scale, ImageFormat::Jpeg)?,
+        "image/png" => img::scaledown_static(&obj.data, scale, ImageFormat::Png)?,
+        "image/webp" => img::scaledown_static(&obj.data, scale, ImageFormat::WebP)?,
         "image/gif" => img::scaledown_gif(&image_path, &mod_image_path, scale)?,
+        "image/svg+xml" => {
+            obj.content_type = mime::IMAGE_PNG;
+            img::scaledown_static(&obj.data, scale, ImageFormat::Png)?
+        }
         "video/mp4" => {
-            content_type = mime::IMAGE_GIF;
+            obj.content_type = mime::IMAGE_GIF;
             img::mp4_to_gif(&image_path, &mod_image_path, scale)?
+        }
+        "text/plain" => {
+            //try guessing format as last measure if not found in response header.
+            obj.content_type = utils::guess_content_type(&image_path)?;
+            obj.data.clone()
         }
         _ => {
             log::warn!(
                 "Got unsupported format: {} - Skipping processing",
-                content_type
+                obj.content_type
             );
-            image_data.clone()
+            obj.data.clone()
         }
     };
 
     //saving modified image to mod path
-    if payload != image_data {
+    if payload != obj.data {
         //save by width for quick caching
         utils::write_to_file(payload.clone(), &mod_image_path)?;
         //save to latest modified for fixed path
         let latest_mod_path = format!("{}/mod/latest/{}/{}", cfg.storage_path, service.name, image);
         utils::write_to_file(payload.clone(), &latest_mod_path)?;
     }
-    Ok(HttpResponse::Ok().content_type(content_type).body(payload))
+    Ok(HttpResponse::Ok()
+        .content_type(obj.content_type)
+        .body(payload))
 }
 
 #[actix_web::main]

@@ -1,5 +1,6 @@
 use anyhow::Result;
-use image::ImageFormat;
+use cmd_lib::*;
+//use image::ImageFormat;
 use mime::Mime;
 use std::fmt;
 use std::fs::File;
@@ -41,6 +42,7 @@ pub fn read_from_file(path: &str) -> Result<Vec<u8>> {
     Ok(image_data)
 }
 
+/*
 pub fn guess_content_type(data: &[u8]) -> Result<Mime> {
     //open image and try to guess image type
     let image_type = image::guess_format(data).unwrap_or_else(|e| {
@@ -63,4 +65,10 @@ pub fn guess_content_type(data: &[u8]) -> Result<Mime> {
         }
     };
     Ok(content_type)
+}
+*/
+pub fn guess_content_type(path: &str) -> Result<Mime> {
+    let mut proc = spawn_with_output!(file -i -0 ${path} | cut -d " " -f2 | tr -d ';')?;
+    let output = proc.wait_with_output()?;
+    Ok(output.parse::<mime::Mime>().unwrap())
 }
