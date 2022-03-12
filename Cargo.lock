@@ -577,6 +577,16 @@ dependencies = [
 
 [[package]]
 name = "deflate"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73770f8e1fe7d64df17ca66ad28994a0a623ea497fa69486e14984e715c5d174"
+dependencies = [
+ "adler32",
+ "byteorder",
+]
+
+[[package]]
+name = "deflate"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c86f7e25f518f4b81808a2cf1c50996a61f5c2eb394b2393bd87f2a4780a432f"
@@ -663,7 +673,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4badb9489a465cb2c555af1f00f0bfd8cecd6fc12ac11da9d5b40c5dd5f0200"
 dependencies = [
  "bit_field",
- "deflate",
+ "deflate 1.0.0",
  "flume",
  "half",
  "inflate",
@@ -681,6 +691,15 @@ dependencies = [
  "bitflags",
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "fallible_collections"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52db5973b6a19247baf19b30f41c23a1bfffc2e9ce0a5db2f60e3cd5dc8895f7"
+dependencies = [
+ "hashbrown",
 ]
 
 [[package]]
@@ -851,6 +870,9 @@ name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
+dependencies = [
+ "ahash",
+]
 
 [[package]]
 name = "hermit-abi"
@@ -916,7 +938,7 @@ dependencies = [
  "num-iter",
  "num-rational",
  "num-traits",
- "png",
+ "png 0.17.3",
  "scoped_threadpool",
  "tiff",
 ]
@@ -935,7 +957,10 @@ dependencies = [
  "image",
  "log",
  "mime",
+ "png 0.16.8",
+ "resize",
  "resvg",
+ "rgb",
  "rustls",
  "serde",
  "serde_derive",
@@ -1107,6 +1132,15 @@ name = "mime"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a60c7ce501c71e03a9c9c0d35b861413ae925bd979cc7a4e30d060069aaac8d"
+
+[[package]]
+name = "miniz_oxide"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "791daaae1ed6889560f8c4359194f56648355540573244a5448a83ba1ecc7435"
+dependencies = [
+ "adler32",
+]
 
 [[package]]
 name = "miniz_oxide"
@@ -1318,13 +1352,25 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "png"
+version = "0.16.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c3287920cb847dee3de33d301c463fba14dda99db24214ddf93f83d3021f4c6"
+dependencies = [
+ "bitflags",
+ "crc32fast",
+ "deflate 0.8.6",
+ "miniz_oxide 0.3.7",
+]
+
+[[package]]
+name = "png"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e8f1882177b17c98ec33a51f5910ecbf4db92ca0def706781a1f8d0c661f393"
 dependencies = [
  "bitflags",
  "crc32fast",
- "deflate",
+ "deflate 1.0.0",
  "miniz_oxide 0.5.1",
 ]
 
@@ -1474,6 +1520,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f497285884f3fcff424ffc933e56d7cbca511def0c9831a7f9b5f6153e3cc89b"
 
 [[package]]
+name = "resize"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2a32135a3cd4df690ee74dc0e1a77ffe2cdd4611b4e58b84df26a856d92b4ef"
+dependencies = [
+ "fallible_collections",
+ "rgb",
+]
+
+[[package]]
 name = "resvg"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1483,7 +1539,7 @@ dependencies = [
  "jpeg-decoder 0.2.2",
  "log",
  "pico-args",
- "png",
+ "png 0.17.3",
  "rgb",
  "svgfilters",
  "svgtypes",
@@ -1803,7 +1859,7 @@ dependencies = [
  "arrayvec",
  "bytemuck",
  "cfg-if 1.0.0",
- "png",
+ "png 0.17.3",
  "safe_arch",
 ]
 

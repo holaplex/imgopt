@@ -2,7 +2,12 @@ use crate::utils::*;
 use anyhow::Result;
 use cmd_lib::*;
 use image::io::Reader;
-use image::{DynamicImage, ImageFormat};
+use image::ImageFormat;
+use png::BitDepth;
+use png::ColorType;
+use resize::Pixel;
+use resize::Type::Triangle;
+use rgb::FromSlice;
 use std::io::Cursor;
 use std::time::Instant;
 
@@ -55,23 +60,55 @@ pub fn scaledown_static(data: &Vec<u8>, width: u32, format: ImageFormat) -> Resu
     //moving to buffer
     let start = Instant::now();
     let reader = Reader::with_format(Cursor::new(data), format);
-    let img = reader.decode().unwrap_or_else(|e| {
-        log::error!("Error decoding image: {}", e);
-        //returning dummy
-        DynamicImage::new_luma16(0, 0)
-    });
-
-    //if image is 0 bytes the decoding has failed. return the original image.
-    if img.as_bytes().is_empty() {
-        log::warn!("falling back to base image from storage");
-        return Ok(data.clone());
-    }
+    let img = reader.decode()?;
     let format = match format {
-        ImageFormat::WebP => ImageFormat::Png,
+        ImageFormat::WebP => ImageFormat::Jpeg,
         _ => format,
     };
     let mut buff = Cursor::new(Vec::new());
     img.thumbnail(width, width).write_to(&mut buff, format)?;
+    log::info!("Resized to {} px in {}", width, Elapsed::from(&start));
+    Ok(buff.into_inner())
+}
+
+pub fn scaledown_png(data: &Vec<u8>, width: u32) -> Result<Vec<u8>> {
+    let start = Instant::now();
+    let decoder = png::Decoder::new(Cursor::new(data));
+    let (info, mut reader) = decoder.read_info()?;
+    let mut src = vec![0; info.buffer_size()];
+    reader.next_frame(&mut src).unwrap();
+
+    let (w1, h1) = (info.width as usize, info.height as usize);
+    let (w2, h2) = (width as usize, width as usize);
+    let mut dst = vec![0u8; w2 * h2 * info.color_type.samples()];
+
+    assert_eq!(BitDepth::Eight, info.bit_depth);
+    match info.color_type {
+        ColorType::Grayscale => resize::new(w1, h1, w2, h2, Pixel::Gray8, Triangle)?
+            .resize(src.as_gray(), dst.as_gray_mut())?,
+        ColorType::RGB => resize::new(w1, h1, w2, h2, Pixel::RGB8, Triangle)?
+            .resize(src.as_rgb(), dst.as_rgb_mut())?,
+        ColorType::Indexed => {
+            log::error!("Unimplemented conversion -> ColorType::Indexed");
+            unimplemented!()
+        }
+        ColorType::GrayscaleAlpha => {
+            log::error!("Unimplemented conversion -> ColorType::GrayscaleAlpha");
+            unimplemented!()
+        }
+        ColorType::RGBA => resize::new(w1, h1, w2, h2, Pixel::RGBA8, Triangle)?
+            .resize(src.as_rgba(), dst.as_rgba_mut())?,
+    };
+
+    let mut buff = Cursor::new(Vec::new());
+    let mut encoder = png::Encoder::new(&mut buff, w2 as u32, h2 as u32);
+    encoder.set_color(info.color_type);
+    encoder.set_depth(info.bit_depth);
+    encoder
+        .write_header()
+        .unwrap()
+        .write_image_data(&dst)
+        .unwrap();
     log::info!("Resized to {} px in {}", width, Elapsed::from(&start));
     Ok(buff.into_inner())
 }

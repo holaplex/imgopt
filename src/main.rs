@@ -1,4 +1,6 @@
-use actix_web::{get, middleware, web, web::Data, App, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{
+    error, get, middleware, web, web::Data, App, HttpRequest, HttpResponse, HttpServer,
+};
 use anyhow::Result;
 use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
 use image::ImageFormat;
@@ -69,13 +71,56 @@ impl Default for AppConfig {
 pub struct Params {
     width: Option<u32>,
     force: Option<bool>,
+    engine: Option<u32>,
 }
 
 async fn get_health_status() -> HttpResponse {
     HttpResponse::Ok().content_type("text/plain").body("200 OK")
 }
 
-#[get("/{service}/{image}")] // <- define path parameters
+#[get("/proxy/{service}/{image}")]
+async fn forward(
+    req: HttpRequest,
+    payload: web::Payload,
+    client: web::Data<Client>,
+    cfg: Data<AppConfig>,
+    data: web::Path<(String, String)>,
+) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+    //validate service with allow list in config
+    let svc = data.0.to_string();
+    let service: Option<&Service> = cfg.services.iter().find(|s| s.name == svc);
+    if service.is_none() {
+        log::warn!("Received endpoint is not allowed");
+        return Ok(HttpResponse::BadRequest()
+            .content_type("text/plain")
+            .body("Received endpoint not allowed!"));
+    };
+    let service = service.unwrap();
+    let image = data.1.to_string();
+    let uri = format!("{}/{}", service.endpoint, image);
+
+    let forwarded_req = client.request_from(uri, req.head()).no_decompress();
+    let forwarded_req = match req.head().peer_addr {
+        Some(addr) => forwarded_req.insert_header(("x-forwarded-for", format!("{}", addr.ip()))),
+        None => forwarded_req,
+    };
+
+    let res = forwarded_req
+        .send_stream(payload)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
+
+    let mut client_resp = HttpResponse::build(res.status());
+    // Remove `Connection` as per
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
+    for (header_name, header_value) in res.headers().iter().filter(|(h, _)| *h != "connection") {
+        client_resp.insert_header((header_name.clone(), header_value.clone()));
+    }
+
+    Ok(client_resp.streaming(res))
+}
+
+#[get("/{service}/{image}")]
 async fn fetch_image(
     req: HttpRequest,
     client: Data<Client>,
@@ -134,6 +179,7 @@ async fn fetch_image(
     );
 
     let force_download = params.force.unwrap_or(false);
+    let engine = params.engine.unwrap_or(0);
     if scale != 0 && force_download != true {
         //Try opening from mod image path first - if file is not found continue
         if std::path::Path::new(&mod_image_path).exists() {
@@ -247,32 +293,46 @@ async fn fetch_image(
     };
     //process the image and return payload
     let payload = match obj.content_type.as_ref() {
-        "image/jpeg" => img::scaledown_static(&obj.data, scale, ImageFormat::Jpeg)?,
-        "image/png" => img::scaledown_static(&obj.data, scale, ImageFormat::Png)?,
-        "image/webp" => img::scaledown_static(&obj.data, scale, ImageFormat::WebP)?,
-        "image/gif" => img::scaledown_gif(&image_path, &mod_image_path, scale)?,
+        "image/jpeg" => img::scaledown_static(&obj.data, scale, ImageFormat::Jpeg),
+        "image/png" => match engine {
+            1 => img::scaledown_static(&obj.data, scale, ImageFormat::Png),
+            _ => img::scaledown_png(&obj.data, scale),
+        },
+        "image/webp" => img::scaledown_static(&obj.data, scale, ImageFormat::WebP),
+        "image/gif" => img::scaledown_gif(&image_path, &mod_image_path, scale),
         "image/svg+xml" => {
             obj.content_type = mime::IMAGE_PNG;
-            img::scaledown_static(&obj.data, scale, ImageFormat::Png)?
+            img::scaledown_static(&obj.data, scale, ImageFormat::Png)
         }
         "video/mp4" => {
             obj.content_type = mime::IMAGE_GIF;
-            img::mp4_to_gif(&image_path, &mod_image_path, scale)?
+            img::mp4_to_gif(&image_path, &mod_image_path, scale)
         }
         "text/plain" => {
             //try guessing format as last measure if not found in response header.
             obj.content_type = utils::guess_content_type(&image_path)?;
-            obj.data.clone()
+            Ok(obj.data.clone())
         }
         _ => {
             log::warn!(
                 "Got unsupported format: {} - Skipping processing",
                 obj.content_type
             );
+            Ok(obj.data.clone())
+        }
+    };
+    let payload = match payload {
+        Ok(k) => k,
+        Err(e) => {
+            log::error!(
+                "Falling back to base image due to: Error decoding image {}/{} | {}",
+                svc,
+                image,
+                e
+            );
             obj.data.clone()
         }
     };
-
     //saving modified image to mod path
     if payload != obj.data {
         //save by width for quick caching
