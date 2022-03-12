@@ -76,7 +76,7 @@ pub fn scaledown_png(data: &Vec<u8>, width: u32) -> Result<Vec<u8>> {
     let decoder = png::Decoder::new(Cursor::new(data));
     let (info, mut reader) = decoder.read_info()?;
     let mut src = vec![0; info.buffer_size()];
-    reader.next_frame(&mut src).unwrap();
+    reader.next_frame(&mut src)?;
 
     let (w1, h1) = (info.width as usize, info.height as usize);
     let (w2, h2) = (width as usize, width as usize);
