@@ -293,7 +293,7 @@ async fn fetch_image(
     };
     //process the image and return payload
     let payload = match obj.content_type.as_ref() {
-        "image/jpeg" => img::scaledown_static(&obj.data, scale, ImageFormat::Jpeg),
+        "image/jpeg" | "image/jpg" => img::scaledown_static(&obj.data, scale, ImageFormat::Jpeg),
         "image/png" => match engine {
             1 => img::scaledown_static(&obj.data, scale, ImageFormat::Png),
             _ => img::scaledown_png(&obj.data, scale),
@@ -325,10 +325,11 @@ async fn fetch_image(
         Ok(k) => k,
         Err(e) => {
             log::error!(
-                "Falling back to base image due to: Error decoding image {}/{} | {}",
+                "Falling back to base image due to: Error decoding image {}/{} | {} | {}",
                 svc,
                 image,
-                e
+                e,
+                e.root_cause()
             );
             obj.data.clone()
         }
