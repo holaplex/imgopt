@@ -90,6 +90,8 @@ pub fn scaledown_png(data: &[u8], width: u32) -> Result<Vec<u8>> {
             (info.width / (info.height / width)) as usize,
             (info.height / (info.height / width)) as usize,
         )
+    } else if info.height == info.width {
+        (width as usize, width as usize)
     } else {
         (info.width as usize, info.height as usize)
     };
