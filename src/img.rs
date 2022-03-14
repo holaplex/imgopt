@@ -23,25 +23,28 @@ pub fn mp4_to_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
             width,
             Elapsed::from(&start)
         );
-        read_from_file(&output_path)
+        read_from_file(output_path)
     }
 }
 pub fn scaledown_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec<u8>> {
     let start = Instant::now();
     let mut handle = spawn!(gifsicle ${input_path} -o ${output_path} --resize ${width}x${width})?;
     if handle.wait().is_err() {
-        log::error!("Unable to convert gif with run_cmd.. Falling back to original image");
+        log::error!(
+            "Unable to convert gif from path {} with run_cmd.. Falling back to original image",
+            input_path
+        );
         read_from_file(input_path)
     } else {
         log::info!("Resized gif to {} px in {}", width, Elapsed::from(&start));
-        read_from_file(&output_path)
+        read_from_file(output_path)
     }
 }
 
-pub fn svg_to_png(data: &Vec<u8>) -> Result<Vec<u8>> {
+pub fn svg_to_png(data: &[u8]) -> Result<Vec<u8>> {
     let mut opt = usvg::Options::default();
     opt.fontdb.load_system_fonts();
-    let rtree = usvg::Tree::from_data(&data, &opt.to_ref())?;
+    let rtree = usvg::Tree::from_data(data, &opt.to_ref())?;
     let pixmap_size = rtree.svg_node().size.to_screen_size();
     let mut pixmap = tiny_skia::Pixmap::new(pixmap_size.width(), pixmap_size.height()).unwrap();
 
@@ -56,7 +59,7 @@ pub fn svg_to_png(data: &Vec<u8>) -> Result<Vec<u8>> {
     Ok(png_bytes)
 }
 
-pub fn scaledown_static(data: &Vec<u8>, width: u32, format: ImageFormat) -> Result<Vec<u8>> {
+pub fn scaledown_static(data: &[u8], width: u32, format: ImageFormat) -> Result<Vec<u8>> {
     //moving to buffer
     let start = Instant::now();
     let reader = Reader::with_format(Cursor::new(data), format);
@@ -71,15 +74,26 @@ pub fn scaledown_static(data: &Vec<u8>, width: u32, format: ImageFormat) -> Resu
     Ok(buff.into_inner())
 }
 
-pub fn scaledown_png(data: &Vec<u8>, width: u32) -> Result<Vec<u8>> {
+pub fn scaledown_png(data: &[u8], width: u32) -> Result<Vec<u8>> {
     let start = Instant::now();
     let decoder = png::Decoder::new(Cursor::new(data));
     let (info, mut reader) = decoder.read_info()?;
     let mut src = vec![0; info.buffer_size()];
     reader.next_frame(&mut src)?;
-
+    let (w2, h2) = if info.width > width {
+        (
+            (info.width / (info.width / width)) as usize,
+            (info.height / (info.width / width)) as usize,
+        )
+    } else if info.height > width {
+        (
+            (info.width / (info.height / width)) as usize,
+            (info.height / (info.height / width)) as usize,
+        )
+    } else {
+        (info.width as usize, info.height as usize)
+    };
     let (w1, h1) = (info.width as usize, info.height as usize);
-    let (w2, h2) = (width as usize, width as usize);
     let mut dst = vec![0u8; w2 * h2 * info.color_type.samples()];
 
     assert_eq!(BitDepth::Eight, info.bit_depth);

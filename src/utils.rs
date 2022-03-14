@@ -1,6 +1,5 @@
 use anyhow::Result;
 use cmd_lib::*;
-//use image::ImageFormat;
 use mime::Mime;
 use std::fmt;
 use std::fs::File;
@@ -42,31 +41,6 @@ pub fn read_from_file(path: &str) -> Result<Vec<u8>> {
     Ok(image_data)
 }
 
-/*
-pub fn guess_content_type(data: &[u8]) -> Result<Mime> {
-    //open image and try to guess image type
-    let image_type = image::guess_format(data).unwrap_or_else(|e| {
-        log::error!(
-            "Error while detecting format: {}. Using fallback format: OpenExr",
-            e
-        );
-        ImageFormat::OpenExr
-    });
-    log::info!("guessed image format: {:?}", image_type);
-    let content_type = match image_type {
-        ImageFormat::Jpeg => mime::IMAGE_JPEG,
-        ImageFormat::WebP => mime::IMAGE_PNG,
-        ImageFormat::Png => mime::IMAGE_PNG,
-        ImageFormat::Gif => mime::IMAGE_GIF,
-        _ => {
-            log::warn!("Unsuported format. Falling back to {:?}", image_type);
-            let mp4_mime: mime::Mime = "video/mp4".parse().unwrap();
-            mp4_mime
-        }
-    };
-    Ok(content_type)
-}
-*/
 pub fn guess_content_type(path: &str) -> Result<Mime> {
     let mut proc = spawn_with_output!(file -i -0 ${path} | cut -d " " -f2 | tr -d ';')?;
     let output = proc.wait_with_output()?;

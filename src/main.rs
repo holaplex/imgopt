@@ -1,5 +1,8 @@
+//use actix_web::http::Error;
+//
 use actix_web::{
-    error, get, middleware, web, web::Data, App, HttpRequest, HttpResponse, HttpServer,
+    error, get, http::header::HeaderMap, http::StatusCode, middleware, web, web::Data, App,
+    HttpRequest, HttpResponse, HttpServer,
 };
 use anyhow::Result;
 use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
@@ -31,11 +34,93 @@ struct AppConfig {
     skip_list: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct Object {
     data: Vec<u8>,
     content_type: mime::Mime,
+    name: String,
+    service: Service,
+    response: Option<String>,
+    status: Option<StatusCode>,
+    headers: Option<HeaderMap>,
 }
+impl Object {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            data: Vec::new(),
+            content_type: "text/plain".parse::<mime::Mime>().unwrap(),
+            service: Service::default(),
+            response: None,
+            status: None,
+            headers: None,
+        }
+    }
+    async fn download(
+        &mut self,
+        client: &Data<awc::Client>,
+        cfg: &Data<AppConfig>,
+    ) -> Result<&Object, Box<dyn std::error::Error>> {
+        //Try download
+        let image_path = format!(
+            "{}/base/{}/{}",
+            cfg.storage_path, self.service.name, self.name
+        );
+        let url = format!("{}/{}", self.service.endpoint, self.name);
+        let start = Instant::now();
+        log::info!("Downloading object from: {}", url);
+        self.response = if url.is_empty() {
+            log::error!("Error! url not provided");
+            Some(String::from("URL not provided"))
+        } else {
+            None
+        };
+        let mut res = client
+            .get(&url)
+            .timeout(Duration::from_secs(cfg.req_timeout))
+            .send()
+            .await?;
+        if !res.status().is_success() {
+            log::error!(
+                "{} did not return expected object: {} -- Response: {:#?}",
+                self.service.name,
+                self.name,
+                res
+            );
+        }
+        self.status = Some(res.status());
+        let payload = res
+            .body()
+            // expected image is larger than default body limit
+            .limit(cfg.max_body_size_bytes)
+            .await?;
+        log::info!(
+            "it took {} to download object to memory",
+            Elapsed::from(&start)
+        );
+        //response to bytes
+        self.data = payload.as_ref().to_vec();
+        //retrieving mime type from headers
+        self.headers = Some(res.headers().clone());
+        self.content_type = match self.headers.clone().unwrap().get(CONTENT_TYPE) {
+            None => {
+                log::warn!("The response does not contain a Content-Type header.");
+                "text/plain".parse::<mime::Mime>().unwrap()
+            }
+            Some(x) => x.to_str()?.parse::<mime::Mime>().unwrap(),
+        };
+        log::info!("got mime from headers: {}", self.content_type);
+        //Saving downloaded image in S3
+        let start = Instant::now();
+
+        let mut file = File::create(&image_path)?;
+        file.write_all(&self.data).unwrap();
+        log::info!("it took {} to save image to disk", Elapsed::from(&start));
+        //return image as bytes to use from mem
+        Ok(self)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Service {
     name: String,
@@ -97,13 +182,13 @@ async fn forward(
     };
     let service = service.unwrap();
     let image = data.1.to_string();
-    let uri = format!("{}/{}", service.endpoint, image);
+    let url = format!("{}/{}", service.endpoint, image);
 
-    let forwarded_req = client.request_from(uri, req.head()).no_decompress();
-    let forwarded_req = match req.head().peer_addr {
-        Some(addr) => forwarded_req.insert_header(("x-forwarded-for", format!("{}", addr.ip()))),
-        None => forwarded_req,
-    };
+    let forwarded_req = client.request_from(url, req.head()).no_decompress();
+    //let forwarded_req = match req.head().peer_addr {
+    //    Some(addr) => forwarded_req.insert_header(("x-forwarded-for", format!("{}", addr.ip()))),
+    //    None => forwarded_req,
+    //};
 
     let res = forwarded_req
         .send_stream(payload)
@@ -129,7 +214,7 @@ async fn fetch_image(
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
     //load config
     let data = data.into_inner();
-    let image = data.1;
+    let mut obj = Object::new(data.1);
     //get desired scale from parameters
     let params = web::Query::<Params>::from_query(req.query_string())?;
 
@@ -142,7 +227,7 @@ async fn fetch_image(
             .content_type("text/plain")
             .body("Received endpoint not allowed!"));
     };
-    let service = service.unwrap();
+    obj.service = service.unwrap().clone();
     //validate scaling param with allow list in config
     let scale: u32 = params.width.unwrap_or(0);
     if cfg.allowed_sizes.is_some() {
@@ -153,7 +238,7 @@ async fn fetch_image(
             .into_iter()
             .filter(|s| s == &scale || scale == 0)
             .collect();
-        if scale_validation.is_empty() {
+        if scale_validation.get(0).is_none() {
             log::warn!(
                 "Received parameter not allowed. Got request to scale to {}",
                 scale
@@ -163,135 +248,85 @@ async fn fetch_image(
                 .body("Scaling value not allowed!"));
         };
     };
-    //Creating required directories
-    fs::create_dir_all(format!("{}/base/{}", cfg.storage_path, service.name))?;
-    fs::create_dir_all(format!("{}/mod/latest/{}", cfg.storage_path, service.name))?;
-    fs::create_dir_all(format!(
-        "{}/mod/{}/{}",
-        cfg.storage_path, service.name, scale
-    ))?;
 
-    let uri = format!("{}/{}", service.endpoint, image);
+    //Creating required directories
+    create_dirs(&cfg, &obj, &scale)?;
 
     let mod_image_path = format!(
         "{}/mod/{}/{}/{}",
-        cfg.storage_path, service.name, scale, image
+        cfg.storage_path, obj.service.name, scale, obj.name
     );
-
     let force_download = params.force.unwrap_or(false);
     let engine = params.engine.unwrap_or(0);
-    if scale != 0 && force_download != true {
-        //Try opening from mod image path first - if file is not found continue
+
+    //Try opening from mod image path first - if file is not found continue
+    //This assumes the stored file is valid.
+    //File validation is performed after first download.
+    if scale != 0 && !force_download {
         if std::path::Path::new(&mod_image_path).exists() {
             let image_data = utils::read_from_file(&mod_image_path)?;
-            let content_type = utils::guess_content_type(&mod_image_path)?;
+            obj.content_type = utils::guess_content_type(&mod_image_path)?;
             return Ok(HttpResponse::Ok()
-                .content_type(content_type)
+                .content_type(obj.content_type)
                 .body(image_data));
         };
     }
 
+    let image_path = format!(
+        "{}/base/{}/{}",
+        cfg.storage_path, obj.service.name, obj.name
+    );
+
     //try to get base image from S3  || download if not found
-    let image_path = format!("{}/base/{}/{}", cfg.storage_path, service.name, image);
-    let mut obj: Object = if std::path::Path::new(&image_path).exists() && force_download != true {
-        log::info!("Found image in storage, reading file");
-        let image_data = utils::read_from_file(&image_path)?;
-        Object {
-            data: image_data.clone(),
-            content_type: utils::guess_content_type(&image_path)?,
-        }
+    let mut obj = if std::path::Path::new(&image_path).exists() && !force_download {
+        log::info!("Found object in storage, reading file");
+        obj.data = utils::read_from_file(&image_path)?;
+        obj.content_type = utils::guess_content_type(&image_path)?;
+        obj
     } else {
-        if force_download {
-            log::info!(
-                "Detected force param: Forcing image download: {}/{}",
-                service.name,
-                image
-            );
-        }
-        //Try download
-        let start = Instant::now();
-        log::info!("Trying to download image from: {}", uri);
-        if uri.is_empty() {
-            log::error!("Error! image not provided");
-            return Ok(HttpResponse::InternalServerError().finish());
-        }
-
-        let mut res = client
-            .get(&uri)
-            .timeout(Duration::from_secs(cfg.req_timeout))
-            .send()
-            .await?;
-
-        if !res.status().is_success() {
-            log::error!(
-                "{} did not return expected image: {} -- Response: {:#?}",
-                service.name,
-                image,
-                res
-            );
-            return Ok(HttpResponse::InternalServerError().finish());
-        }
-
-        let payload = res
-            .body()
-            // expected image is larger than default body limit
-            .limit(cfg.max_body_size_bytes)
-            .await?;
-        log::info!(
-            "it took {} to download image to memory",
-            Elapsed::from(&start)
-        );
-        //response to bytes
-        let mut data: Vec<u8> = payload.as_ref().to_vec();
-        //retrieving mime type from headers
-        let headers = res.headers();
-
-        let mut content_type = match headers.get(CONTENT_TYPE) {
-            None => {
-                log::warn!("The response does not contain a Content-Type header.");
-                "text/plain".parse::<mime::Mime>().unwrap()
-            }
-            Some(x) => x.to_str()?.parse::<mime::Mime>().unwrap(),
-        };
-        log::info!("got mime from headers: {}", content_type);
-        //Saving downloaded image in S3
-        let start = Instant::now();
-        //convert to png and save as base if mime type = svg
-        if content_type == mime::IMAGE_SVG {
-            let converted = img::svg_to_png(&data)?;
-            data = converted;
-            content_type = mime::IMAGE_PNG;
-        };
-        let mut file = File::create(&image_path)?;
-        file.write_all(&data).unwrap();
-        log::info!("it took {} to save image to disk", Elapsed::from(&start));
-        //return image as bytes to use from mem
-        Object { data, content_type }
+        obj.download(&client, &cfg).await?.clone()
     };
 
+    // TODO: Try to read(decode as media content) the file based on the content_type.
+    // if the file cannot be read successfully trigger an invalidation and
+    // download the file again  before serving.
+
+    //convert to png and save as base if mime type = svg
+    if obj.content_type == mime::IMAGE_SVG {
+        let converted = img::svg_to_png(&obj.data)?;
+        obj.data = converted;
+        obj.content_type = mime::IMAGE_PNG;
+    };
+
+    //send base image if scale is 0
     if scale == 0 {
-        //send base image if scale is 0
         return Ok(HttpResponse::Ok()
             .content_type(obj.content_type)
             .body(obj.data));
     }
 
+    //Skip processing for images in 'skip_list' array in config file.
     if cfg.skip_list.is_some() {
         let file_validation: Vec<String> = cfg
             .skip_list
             .clone()
             .unwrap()
             .into_iter()
-            .filter(|i| i == &image)
+            .filter(|i| i == &obj.name)
             .collect();
-        if !file_validation.is_empty() {
-            log::info!("Skipping image {} from processing", image);
+        if file_validation.get(0).is_some() {
+            log::info!(
+                "Skipping image {}/{} from processing",
+                obj.service.name,
+                obj.name
+            );
             return Ok(HttpResponse::Ok()
                 .content_type(obj.content_type)
                 .body(obj.data.clone()));
         };
     };
-    //process the image and return payload
+
+    //process the image and return content as bytes
     let payload = match obj.content_type.as_ref() {
         "image/jpeg" | "image/jpg" => img::scaledown_static(&obj.data, scale, ImageFormat::Jpeg),
         "image/png" => match engine {
@@ -308,8 +343,19 @@ async fn fetch_image(
             obj.content_type = mime::IMAGE_GIF;
             img::mp4_to_gif(&image_path, &mod_image_path, scale)
         }
+        "text/html" => {
+            //download probably failed. try again
+            log::error!(
+                "text/html is not a valid image. Re-downloading base object: {}/{}",
+                obj.service.name,
+                obj.name
+            );
+            let obj = obj.download(&client, &cfg).await?.clone();
+            Ok(obj.data)
+        }
         "text/plain" => {
             //try guessing format as last measure if not found in response header.
+            //this will skip processing
             obj.content_type = utils::guess_content_type(&image_path)?;
             Ok(obj.data.clone())
         }
@@ -321,17 +367,33 @@ async fn fetch_image(
             Ok(obj.data.clone())
         }
     };
+
+    //if procesing returned Ok, send that as payload.
+    //if processing failed, send base image without processing
     let payload = match payload {
         Ok(k) => k,
         Err(e) => {
             log::error!(
-                "Falling back to base image due to: Error decoding image {}/{} | {} | {}",
-                svc,
-                image,
-                e,
-                e.root_cause()
+                "Error reading/decoding file {}/{} | {}",
+                obj.service.name,
+                obj.name,
+                e
             );
-            obj.data.clone()
+            // "error handling" lol
+            //attempt to download file again. possibly corrupted file.
+            let error = e.to_string();
+            if error.contains("buffer") || error.contains("unexpected EOF") {
+                log::warn!(
+                    "Re-downloading base object: {}/{}",
+                    obj.service.name,
+                    obj.name
+                );
+                let obj = obj.download(&client, &cfg).await?.clone();
+                obj.data
+            } else {
+                //probably failed to decode the image, return original.
+                obj.data.clone()
+            }
         }
     };
     //saving modified image to mod path
@@ -339,7 +401,10 @@ async fn fetch_image(
         //save by width for quick caching
         utils::write_to_file(payload.clone(), &mod_image_path)?;
         //save to latest modified for fixed path
-        let latest_mod_path = format!("{}/mod/latest/{}/{}", cfg.storage_path, service.name, image);
+        let latest_mod_path = format!(
+            "{}/mod/latest/{}/{}",
+            cfg.storage_path, obj.service.name, obj.name
+        );
         utils::write_to_file(payload.clone(), &latest_mod_path)?;
     }
     Ok(HttpResponse::Ok()
@@ -389,6 +454,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::new(client))
             .app_data(Data::new(cfg.clone()))
             .service(fetch_image)
+            .service(forward)
     })
     .bind(("0.0.0.0", port))?
     .workers(workers)
@@ -411,4 +477,18 @@ fn rustls_config() -> ClientConfig {
         .with_safe_defaults()
         .with_root_certificates(root_store)
         .with_no_client_auth()
+}
+
+fn create_dirs(cfg: &AppConfig, obj: &Object, scale: &u32) -> Result<()> {
+    fs::create_dir_all(format!("{}/base/{}", cfg.storage_path, obj.service.name))?;
+    fs::create_dir_all(format!(
+        "{}/mod/latest/{}",
+        cfg.storage_path, obj.service.name
+    ))?;
+    fs::create_dir_all(format!(
+        "{}/mod/{}/{}",
+        cfg.storage_path, obj.service.name, scale
+    ))?;
+
+    Ok(())
 }
