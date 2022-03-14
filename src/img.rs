@@ -80,12 +80,12 @@ pub fn scaledown_png(data: &[u8], width: u32) -> Result<Vec<u8>> {
     let (info, mut reader) = decoder.read_info()?;
     let mut src = vec![0; info.buffer_size()];
     reader.next_frame(&mut src)?;
-    let (w2, h2) = if info.width > width {
+    let (w2, h2) = if info.width > width && info.width != info.height {
         (
             (info.width / (info.width / width)) as usize,
             (info.height / (info.width / width)) as usize,
         )
-    } else if info.height > width {
+    } else if info.height > width && info.width != info.height {
         (
             (info.width / (info.height / width)) as usize,
             (info.height / (info.height / width)) as usize,
