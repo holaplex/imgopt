@@ -1,8 +1,12 @@
 //use actix_web::http::Error;
 //
 use actix_web::{
-    error, get, http::header::HeaderMap, http::StatusCode, middleware, web, web::Data, App,
-    HttpRequest, HttpResponse, HttpServer,
+    error, get,
+    http::header::{CacheControl, CacheDirective, HeaderMap},
+    http::StatusCode,
+    middleware, web,
+    web::Data,
+    App, HttpRequest, HttpResponse, HttpServer,
 };
 use anyhow::Result;
 use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
@@ -267,6 +271,7 @@ async fn fetch_image(
             let image_data = utils::read_from_file(&mod_image_path)?;
             obj.content_type = utils::guess_content_type(&mod_image_path)?;
             return Ok(HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
                 .content_type(obj.content_type)
                 .body(image_data));
         };
@@ -301,6 +306,7 @@ async fn fetch_image(
     //send base image if scale is 0
     if scale == 0 {
         return Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
             .content_type(obj.content_type)
             .body(obj.data));
     }
@@ -321,6 +327,7 @@ async fn fetch_image(
                 obj.name
             );
             return Ok(HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
                 .content_type(obj.content_type)
                 .body(obj.data.clone()));
         };
@@ -407,7 +414,9 @@ async fn fetch_image(
         );
         utils::write_to_file(payload.clone(), &latest_mod_path)?;
     }
+
     Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
         .content_type(obj.content_type)
         .body(payload))
 }
