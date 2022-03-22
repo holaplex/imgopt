@@ -41,7 +41,7 @@ jobs:
     - name: Update deployment image version
       run: |
           git_hash=$(git rev-parse --short "$GITHUB_SHA")
-          version=$(cat ./k8s/app/deployment.yaml | grep -i image | awk {'print $2'} | head -n1 | cut -d: -f2)
+          version=$(cat ./k8s/app/deployment.yaml | grep -i image | head -n1 | awk {'print $3'} | cut -d: -f2)
           sed -i "s/$version/${GITHUB_REF##*/}-$git_hash/" ./k8s/app/deployment.yaml
 
     - name: Commit and push changes
