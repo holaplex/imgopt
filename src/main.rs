@@ -236,10 +236,7 @@ async fn fetch_image(
     //validate scaling param with allow list in config
     let scale: u32 = params.width.unwrap_or(0);
     if let Some(list) = &cfg.allowed_sizes {
-        let scale_validation: Vec<_> = list
-            .into_iter()
-            .filter(|&s| s == &scale || scale == 0)
-            .collect();
+        let scale_validation: Vec<_> = list.iter().filter(|&s| s == &scale || scale == 0).collect();
         if scale_validation.get(0).is_none() {
             log::warn!(
                 "Received parameter not allowed. Got request to scale to {}",
@@ -264,16 +261,14 @@ async fn fetch_image(
     //Try opening from mod image path first - if file is not found continue
     //This assumes the stored file is valid.
     //File validation is performed after first download.
-    if scale != 0 && !force_download {
-        if std::path::Path::new(&mod_image_path).exists() {
-            let image_data = utils::read_from_file(&mod_image_path)?;
-            obj.content_type = utils::guess_content_type(&mod_image_path)?;
-            return Ok(HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
-                .content_type(obj.content_type)
-                .body(image_data));
-        };
-    }
+    if scale != 0 && !force_download && std::path::Path::new(&mod_image_path).exists() {
+        let image_data = utils::read_from_file(&mod_image_path)?;
+        obj.content_type = utils::guess_content_type(&mod_image_path)?;
+        return Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
+            .content_type(obj.content_type)
+            .body(image_data));
+    };
 
     let image_path = format!(
         "{}/base/{}/{}",
@@ -295,6 +290,14 @@ async fn fetch_image(
         if !s.is_success() {
             log::warn!("Bad response when downloading object. Triggering new download");
             obj.download(&client, &cfg).await?;
+            //return error 500 if it fails again
+            //TODO: Implement proxying to ipfs directly
+            if let Some(s) = obj.status {
+                if !s.is_success() {
+                    log::error!("Error connecting to {}", obj.service.name);
+                    return Ok(HttpResponse::InternalServerError().finish());
+                }
+            }
         }
     };
 
@@ -319,7 +322,7 @@ async fn fetch_image(
 
     //Skip processing for images in 'skip_list' array in config file.
     if let Some(list) = &cfg.skip_list {
-        let file_validation: Vec<_> = list.into_iter().filter(|&i| i == &obj.name).collect();
+        let file_validation: Vec<_> = list.iter().filter(|&i| i == &obj.name).collect();
         if file_validation.get(0).is_some() {
             log::info!(
                 "Skipping image {}/{} from processing",
