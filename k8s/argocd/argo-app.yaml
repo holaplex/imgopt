@@ -11,4 +11,4 @@ spec:
     path: k8s/app
   destination:
     server: https://kubernetes.default.svc
-    namespace: imgopt
+    namespace: assets

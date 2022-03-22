@@ -14,7 +14,7 @@ FROM debian:stable-slim
 WORKDIR /root
 RUN apt update -y
 #Install gifski and dependencies for FFmpeg
-RUN apt install gifsicle ffmpeg wget libavformat-dev libavfilter-dev libavdevice-dev libclang-dev clang git -y
+RUN apt install gifsicle ffmpeg wget libavformat-dev libavfilter-dev libavdevice-dev libclang-dev clang git file -y
 RUN wget --quiet https://github.com/ImageOptim/gifski/releases/download/1.6.4/gifski_1.6.4_amd64.deb -O gifski.deb
 RUN dpkg -i gifski.deb && rm gifski.deb
 #Install goofys (Not required if not using s3)
