@@ -6,7 +6,7 @@ data:
     #port for the server to listen on
     port = 3030
     #CPU Threads for actix
-    workers = 8
+    workers = 4
     #timeout when contacting listed services
     req_timeout = 600
     #Limit response size from your services
@@ -14,7 +14,7 @@ data:
     #For load balancer liveness Probe
     health_endpoint = "/health"
     #User agent should be <name>/<version>
-    user_agent = "imgopt/0.1.7"
+    user_agent = "imgopt/0.1.8"
     #use full path if possible
     storage_path = "s3"
 

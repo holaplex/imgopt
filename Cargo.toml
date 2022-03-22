@@ -2,7 +2,7 @@
 edition = "2021"
 name = "imgopt"
 authors = ["mpw <mariano@holaplex.com>"]
-version = "0.1.6"
+version = "0.1.8"
 
 [dependencies]
 actix-web = "4.0.1"

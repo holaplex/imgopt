@@ -84,6 +84,7 @@ impl Object {
             .timeout(Duration::from_secs(cfg.req_timeout))
             .send()
             .await?;
+
         if !res.status().is_success() {
             log::error!(
                 "{} did not return expected object: {} -- Response: {:#?}",
@@ -292,6 +293,10 @@ async fn fetch_image(
         obj.download(&client, &cfg).await?.clone()
     };
 
+    if !obj.status.unwrap().is_success() {
+        log::warn!("Bad response when downloading object. Triggering download again");
+        obj.download(&client, &cfg).await?;
+    }
     // TODO: Try to read(decode as media content) the file based on the content_type.
     // if the file cannot be read successfully trigger an invalidation and
     // download the file again  before serving.
@@ -334,7 +339,7 @@ async fn fetch_image(
     };
 
     //process the image and return content as bytes
-    let payload = match obj.content_type.as_ref() {
+    let data = match obj.content_type.as_ref() {
         "image/jpeg" | "image/jpg" => img::scaledown_static(&obj.data, scale, ImageFormat::Jpeg),
         "image/png" => match engine {
             1 => img::scaledown_static(&obj.data, scale, ImageFormat::Png),
@@ -350,21 +355,15 @@ async fn fetch_image(
             obj.content_type = mime::IMAGE_GIF;
             img::mp4_to_gif(&image_path, &mod_image_path, scale)
         }
-        "text/html" => {
+        "text/html" | "text/plain" => {
             //download probably failed. try again
             log::error!(
-                "text/html is not a valid image. Re-downloading base object: {}/{}",
+                "Object is not a valid image. Re-downloading from service: {}/{}",
                 obj.service.name,
                 obj.name
             );
             let obj = obj.download(&client, &cfg).await?.clone();
             Ok(obj.data)
-        }
-        "text/plain" => {
-            //try guessing format as last measure if not found in response header.
-            //this will skip processing
-            obj.content_type = utils::guess_content_type(&image_path)?;
-            Ok(obj.data.clone())
         }
         _ => {
             log::warn!(
@@ -377,7 +376,7 @@ async fn fetch_image(
 
     //if procesing returned Ok, send that as payload.
     //if processing failed, send base image without processing
-    let payload = match payload {
+    let payload = match data {
         Ok(k) => k,
         Err(e) => {
             log::error!(
