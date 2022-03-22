@@ -110,7 +110,7 @@ impl Object {
         self.content_type = match self.headers.clone().unwrap().get(CONTENT_TYPE) {
             None => {
                 log::warn!("The response does not contain a Content-Type header.");
-                "text/plain".parse::<mime::Mime>().unwrap()
+                "application/octet-stream".parse::<mime::Mime>().unwrap()
             }
             Some(x) => x.to_str()?.parse::<mime::Mime>().unwrap(),
         };
@@ -235,13 +235,10 @@ async fn fetch_image(
     obj.service = service.unwrap().clone();
     //validate scaling param with allow list in config
     let scale: u32 = params.width.unwrap_or(0);
-    if cfg.allowed_sizes.is_some() {
-        let scale_validation: Vec<u32> = cfg
-            .allowed_sizes
-            .clone()
-            .unwrap()
+    if let Some(list) = &cfg.allowed_sizes {
+        let scale_validation: Vec<_> = list
             .into_iter()
-            .filter(|s| s == &scale || scale == 0)
+            .filter(|&s| s == &scale || scale == 0)
             .collect();
         if scale_validation.get(0).is_none() {
             log::warn!(
@@ -293,10 +290,14 @@ async fn fetch_image(
         obj.download(&client, &cfg).await?.clone()
     };
 
-    if !obj.status.unwrap().is_success() {
-        log::warn!("Bad response when downloading object. Triggering download again");
-        obj.download(&client, &cfg).await?;
-    }
+    //validate response
+    if let Some(s) = obj.status {
+        if !s.is_success() {
+            log::warn!("Bad response when downloading object. Triggering new download");
+            obj.download(&client, &cfg).await?;
+        }
+    };
+
     // TODO: Try to read(decode as media content) the file based on the content_type.
     // if the file cannot be read successfully trigger an invalidation and
     // download the file again  before serving.
@@ -317,14 +318,8 @@ async fn fetch_image(
     }
 
     //Skip processing for images in 'skip_list' array in config file.
-    if cfg.skip_list.is_some() {
-        let file_validation: Vec<String> = cfg
-            .skip_list
-            .clone()
-            .unwrap()
-            .into_iter()
-            .filter(|i| i == &obj.name)
-            .collect();
+    if let Some(list) = &cfg.skip_list {
+        let file_validation: Vec<_> = list.into_iter().filter(|&i| i == &obj.name).collect();
         if file_validation.get(0).is_some() {
             log::info!(
                 "Skipping image {}/{} from processing",
@@ -364,6 +359,14 @@ async fn fetch_image(
             );
             let obj = obj.download(&client, &cfg).await?.clone();
             Ok(obj.data)
+        }
+        "application/octet-stream" => {
+            log::warn!(
+                "Got unsupported format: {} - Trying to guess format from base.",
+                obj.content_type
+            );
+            obj.content_type = utils::guess_content_type(&image_path)?;
+            Ok(obj.data.clone())
         }
         _ => {
             log::warn!(
