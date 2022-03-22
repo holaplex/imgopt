@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imgopt
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: imgopt
+  template:
+    metadata:
+      labels:
+        app: imgopt
+    spec:
+      containers:
+      - image: 011737333588.dkr.ecr.us-east-1.amazonaws.com/imgopt:v0.1.7
+        imagePullPolicy: IfNotPresent
+        name: imgopt
+        env:
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: cloud-credentials
+                key: AWS_ACCESS_KEY_ID
+                optional: false
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: cloud-credentials
+                key: AWS_SECRET_ACCESS_KEY
+                optional: false
+          - name: AWS_REGION
+            value: us-east-1
+          - name: LOG_LEVEL
+            value: warn
+          - name: STORAGE_PATH
+            value: "/root/s3"
+          - name: S3_MOUNT_PATH
+            value: "/root/s3"
+          - name: BUCKET_NAME
+            value: "imgopt-data"
+          - name: CONFIG_PATH
+            value: "/root/config.toml"
+        securityContext:
+          privileged: true
+        ports:
+        - containerPort: 3030
+          name: imgopt
+        resources:
+          requests:
+            memory: "500Mi"
+        volumeMounts:
+        - name: imgopt-config
+          mountPath: /root/config.toml
+          subPath: config.toml
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3030
+          initialDelaySeconds: 3
+          periodSeconds: 3
+      volumes:
+        - name: imgopt-config
+          configMap:
+            # Provide the name of the ConfigMap containing the files you want
+            # to add to the container
+            name: imgopt-config
