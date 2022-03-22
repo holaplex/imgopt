@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: imgopt
+  namespace: argocd
+spec:
+  project: imgopt
+  source:
+    repoURL: https://github.com/holaplex/imgopt.git
+    targetRevision: main
+    path: k8s/app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: imgopt
