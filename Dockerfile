@@ -24,13 +24,13 @@ RUN dpkg -i gifski.deb && rm gifski.deb
 #RUn chmod +x /usr/local/bin/goofys
 #Prepare env
 RUN useradd --create-home --shell /bin/bash imgopt
-USER imgopt
 WORKDIR /home/imgopt
 COPY --from=build /usr/src/imgopt/target/release/imgopt imgopt
 #Config should be provided from mount point/configMap (Use config-sample.toml as guide)
 COPY scripts/mp4-to-gif.sh .
 COPY scripts/entrypoint.sh .
-RUN chmod +x mp4-to-gif.sh
-RUN chmod +x entrypoint.sh
+RUN chown imgopt:imgopt mp4-to-gif.sh imgopt entrypoint.sh
+RUN chmod +x mp4-to-gif.sh imgopt entrypoint.sh
+USER imgopt
 EXPOSE 3030
 CMD ["./entrypoint.sh"]
