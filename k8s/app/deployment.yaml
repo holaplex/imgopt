@@ -5,7 +5,7 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 5
+  replicas: 10
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -19,6 +19,10 @@ spec:
       labels:
         app: imgopt
     spec:
+      securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
       containers:
       - image: 011737333588.dkr.ecr.us-east-1.amazonaws.com/imgopt:main-f06c741
         imagePullPolicy: IfNotPresent
@@ -41,13 +45,11 @@ spec:
           - name: LOG_LEVEL
             value: warn
           - name: STORAGE_PATH
-            value: "/root/s3"
+            value: "/home/imgopt/s3"
           - name: BUCKET_NAME
             value: "imgopt-data"
           - name: CONFIG_PATH
-            value: "/root/config.toml"
-        securityContext:
-          privileged: true
+            value: "/home/imgopt/config.toml"
         ports:
         - containerPort: 3030
           name: imgopt
@@ -56,8 +58,10 @@ spec:
             memory: "500Mi"
         volumeMounts:
         - name: imgopt-config
-          mountPath: /root/config.toml
+          mountPath: /home/imgopt/config.toml
           subPath: config.toml
+        - name: imgopt-data-efs
+          mountPath: /home/imgopt/data
         livenessProbe:
           httpGet:
             path: /health
@@ -67,6 +71,7 @@ spec:
       volumes:
         - name: imgopt-config
           configMap:
-            # Provide the name of the ConfigMap containing the files you want
-            # to add to the container
             name: imgopt-config
+        - name: imgopt-data-efs
+          persistentVolumeClaim:
+            claimName:  efs-claim-imgopt-data
