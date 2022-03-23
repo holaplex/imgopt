@@ -170,7 +170,6 @@ async fn get_health_status() -> HttpResponse {
 
 #[get("/proxy/{service}/{image}")]
 async fn forward(
-    req: HttpRequest,
     payload: web::Payload,
     client: web::Data<Client>,
     cfg: Data<AppConfig>,
@@ -189,13 +188,10 @@ async fn forward(
     let image = data.1.to_string();
     let url = format!("{}/{}", service.endpoint, image);
 
-    let forwarded_req = client.request_from(url, req.head()).no_decompress();
-    //let forwarded_req = match req.head().peer_addr {
-    //    Some(addr) => forwarded_req.insert_header(("x-forwarded-for", format!("{}", addr.ip()))),
-    //    None => forwarded_req,
-    //};
-
-    let res = forwarded_req
+    let res = client
+        .get(&url)
+        .no_decompress()
+        .timeout(Duration::from_secs(30))
         .send_stream(payload)
         .await
         .map_err(error::ErrorInternalServerError)?;
@@ -206,7 +202,6 @@ async fn forward(
     for (header_name, header_value) in res.headers().iter().filter(|(h, _)| *h != "connection") {
         client_resp.insert_header((header_name.clone(), header_value.clone()));
     }
-
     Ok(client_resp.streaming(res))
 }
 
@@ -290,8 +285,8 @@ async fn fetch_image(
         if !s.is_success() {
             log::warn!("Bad response when downloading object. Triggering new download");
             obj.download(&client, &cfg).await?;
-            //return error 500 if it fails again
-            //TODO: Implement proxying to ipfs directly
+            //return error 500 if it fails again (Proxy will be triggered from cloudfront
+            //</proxy/svc>)
             if let Some(s) = obj.status {
                 if !s.is_success() {
                     log::error!("Error connecting to {}", obj.service.name);
