@@ -17,12 +17,7 @@ RUN apt update -y
 RUN apt install gifsicle ffmpeg wget libavformat-dev libavfilter-dev libavdevice-dev libclang-dev clang git file -y
 RUN wget --quiet https://github.com/ImageOptim/gifski/releases/download/1.6.4/gifski_1.6.4_amd64.deb -O gifski.deb
 RUN dpkg -i gifski.deb && rm gifski.deb
-#Install goofys (Not required if not using s3)
-#RUN apt install gcc ca-certificates openssl musl-dev git fuse syslog-ng coreutils curl -y
-#RUN wget --quiet https://github.com/kahing/goofys/releases/latest/download/goofys -O goofys
-#RUN cp ./goofys /usr/local/bin/goofys
-#RUn chmod +x /usr/local/bin/goofys
-#Prepare env
+#Preparing Env
 RUN useradd --create-home --shell /bin/bash imgopt
 WORKDIR /home/imgopt
 COPY --from=build /usr/src/imgopt/target/release/imgopt imgopt
