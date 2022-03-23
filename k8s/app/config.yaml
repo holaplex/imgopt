@@ -2,7 +2,7 @@ apiVersion: v1
 data:
   config.toml: |
     #Possible values -- debug, info, warn, error
-    log_level = "info"
+    log_level = "warn"
     #port for the server to listen on
     port = 3030
     #CPU Threads for actix
@@ -16,7 +16,7 @@ data:
     #User agent should be <name>/<version>
     user_agent = "imgopt/0.1.8"
     #use full path if possible
-    storage_path = "s3"
+    storage_path = "/home/imgopt/data"
 
     #Limit which width scaling options are available (optional)
     allowed_sizes = [ 50, 100, 200, 400, 500, 600, 800, 700, 900, 1000, 1100, 1200, 1300, 1400, 1500 ]

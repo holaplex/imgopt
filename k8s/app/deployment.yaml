@@ -19,37 +19,14 @@ spec:
       labels:
         app: imgopt
     spec:
-      securityContext:
-          runAsUser: 1000
-          runAsGroup: 1000
-          fsGroup: 1000
       containers:
-      - image: 011737333588.dkr.ecr.us-east-1.amazonaws.com/imgopt:main-f93e25f
+      - image: 011737333588.dkr.ecr.us-east-1.amazonaws.com/imgopt:main-eae413b
         imagePullPolicy: IfNotPresent
         name: imgopt
         env:
-          - name: AWS_ACCESS_KEY_ID
-            valueFrom:
-              secretKeyRef:
-                name: cloud-credentials
-                key: AWS_ACCESS_KEY_ID
-                optional: false
-          - name: AWS_SECRET_ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: cloud-credentials
-                key: AWS_SECRET_ACCESS_KEY
-                optional: false
-          - name: AWS_REGION
-            value: us-east-1
-          - name: LOG_LEVEL
-            value: warn
-          - name: STORAGE_PATH
-            value: "/home/imgopt/s3"
-          - name: BUCKET_NAME
-            value: "imgopt-data"
           - name: CONFIG_PATH
             value: "/home/imgopt/config.toml"
+        command: ["./imgopt"]
         ports:
         - containerPort: 3030
           name: imgopt
@@ -68,6 +45,16 @@ spec:
             port: 3030
           initialDelaySeconds: 3
           periodSeconds: 3
+      initContainers:
+      - name: fs-permission-update
+        image: busybox
+        command:
+        - chown
+        - "1000:1000"
+        - "/efs-fs"
+        volumeMounts:
+        - mountPath: /efs-fs
+          name: imgopt-data-efs
       volumes:
         - name: imgopt-config
           configMap:
