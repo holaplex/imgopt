@@ -1,5 +1,3 @@
-//use actix_web::http::Error;
-//
 use actix_web::{
     error, get,
     http::header::{CacheControl, CacheDirective, HeaderMap},
@@ -70,7 +68,11 @@ impl Object {
             "{}/base/{}/{}",
             cfg.storage_path, self.service.name, self.name
         );
-        let url = format!("{}/{}", self.service.endpoint, self.name);
+        let url = format!(
+            "{}/{}",
+            self.service.endpoint,
+            self.name.replace("-_-", "/")
+        );
         let start = Instant::now();
         log::info!("Downloading object from: {}", url);
         self.response = if url.is_empty() {
@@ -162,6 +164,7 @@ pub struct Params {
     width: Option<u32>,
     force: Option<bool>,
     engine: Option<u32>,
+    path: Option<String>,
 }
 
 async fn get_health_status() -> HttpResponse {
@@ -215,10 +218,15 @@ async fn fetch_image(
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
     //load config
     let data = data.into_inner();
-    let mut obj = Object::new(data.1);
-    //get desired scale from parameters
     let params = web::Query::<Params>::from_query(req.query_string())?;
 
+    //if path is provided then use it as the object name
+    let mut obj = if let Some(custom_path) = params.path.clone() {
+        Object::new(format!("{}-_-{}", data.1, custom_path.replace("/", "-_-")))
+    } else {
+        Object::new(data.1)
+    };
+    //get desired scale from parameters
     //validate service with allow list in config
     let svc = data.0.to_string();
     let service: Option<&Service> = cfg.services.iter().find(|s| s.name == svc);
