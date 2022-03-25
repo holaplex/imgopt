@@ -1,4 +1,4 @@
-FROM instrumentisto/rust:nightly as build
+FROM rustlang/rust:nightly-buster-slim as build
 ENV PKG_CONFIG_ALLOW_CROSS=1
 
 WORKDIR /usr/src/imgopt
@@ -23,9 +23,8 @@ WORKDIR /home/imgopt
 COPY --from=build /usr/src/imgopt/target/release/imgopt imgopt
 #Config should be provided from mount point/configMap (Use config-sample.toml as guide)
 COPY scripts/mp4-to-gif.sh .
-COPY scripts/entrypoint.sh .
-RUN chown imgopt:imgopt mp4-to-gif.sh imgopt entrypoint.sh
-RUN chmod +x mp4-to-gif.sh imgopt entrypoint.sh
+RUN chown imgopt:imgopt mp4-to-gif.sh imgopt
+RUN chmod +x mp4-to-gif.sh imgopt
 USER imgopt
 EXPOSE 3030
-CMD ["./entrypoint.sh"]
+CMD ["./imgopt"]
