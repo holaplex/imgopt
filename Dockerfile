@@ -1,4 +1,7 @@
-FROM rustlang/rust:nightly-buster-slim as build
+#FROM rustlang/rust:nightly-buster-slim as build
+FROM messense/rust-musl-cross:x86_64-musl as build
+RUN rustup update beta && \
+    rustup target add --toolchain beta x86_64-unknown-linux-musl
 ENV PKG_CONFIG_ALLOW_CROSS=1
 
 WORKDIR /usr/src/imgopt
@@ -6,8 +9,7 @@ RUN cargo init
 COPY ./Cargo.toml .
 COPY ./src ./src
 RUN cargo fetch
-COPY ./docker/os_info-1.3.3 /usr/local/cargo/registry/src/github.com-1ecc6299db9ec823/os_info-1.3.3
-RUN cargo build --release
+RUN cargo build --release --target x86_64-unknown-linux-musl
 
 FROM debian:stable-slim
 
@@ -20,7 +22,7 @@ RUN dpkg -i gifski.deb && rm gifski.deb
 #Preparing Env
 RUN useradd --create-home --shell /bin/bash imgopt
 WORKDIR /home/imgopt
-COPY --from=build /usr/src/imgopt/target/release/imgopt imgopt
+COPY --from=build /usr/src/imgopt/target/x86_64-unknown-linux-musl/release/imgopt imgopt
 #Config should be provided from mount point/configMap (Use config-sample.toml as guide)
 COPY scripts/mp4-to-gif.sh .
 RUN chown imgopt:imgopt mp4-to-gif.sh imgopt
