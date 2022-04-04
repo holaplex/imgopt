@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     name: Building and Pushing Image
+    if: ${{ !contains(github.event.head_commit.message, '#k8s') }}
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +27,6 @@ jobs:
       uses: aws-actions/amazon-ecr-login@v1
 
     - name: Build, tag, and push image to Amazon ECR
-      if: ${{ !contains(github.event.head_commit.message, '#k8s') }}
       id: build-image-prod
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
