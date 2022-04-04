@@ -180,7 +180,6 @@ async fn forward(
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
     //validate service with allow list in config
     let svc = data.0.to_string();
-    log::info!("received endpoint: {}", svc);
     let service: Option<&Service> = cfg.services.iter().find(|s| s.name == svc);
     if service.is_none() {
         log::warn!("Received endpoint is not allowed");
