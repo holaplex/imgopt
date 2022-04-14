@@ -3,17 +3,39 @@ use anyhow::Result;
 use cmd_lib::*;
 use image::io::Reader;
 use image::ImageFormat;
+use mp4::TrackType;
 use png::BitDepth;
 use png::ColorType;
 use resize::Pixel;
 use resize::Type::Triangle;
 use rgb::FromSlice;
+use std::fs;
 use std::io::Cursor;
 use std::time::Instant;
 
 pub fn mp4_to_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec<u8>> {
     let start = Instant::now();
-    let mut handle = spawn!(./mp4-to-gif.sh ${input_path} ${width} ${output_path})?;
+    log::info!("reading mp4 to retrieve dimensions");
+    let f = fs::File::open(input_path).unwrap();
+    let mp4 = mp4::read_mp4(f).unwrap();
+    let video_tracks: Vec<_> = mp4
+        .tracks()
+        .values()
+        .into_iter()
+        .filter(|t| t.track_type().unwrap() == TrackType::Video)
+        .collect();
+    log::info!(
+        "Detected dimensions: {}x{}",
+        video_tracks[0].width(),
+        video_tracks[0].height()
+    );
+    let (w, h) = calculate_dimensions(
+        video_tracks[0].width() as u32,
+        video_tracks[0].height() as u32,
+        width,
+    );
+    log::info!("Able to scale to: {}x{}", w, h,);
+    let mut handle = spawn!(./mp4-to-gif.sh ${input_path} ${w} ${h} ${output_path})?;
     if handle.wait().is_err() {
         log::error!("Unable to convert mp4 to gif with run_cmd.. Falling back to original file");
         read_from_file(input_path)
@@ -28,7 +50,23 @@ pub fn mp4_to_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
 }
 pub fn scaledown_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec<u8>> {
     let start = Instant::now();
-    let mut handle = spawn!(gifsicle ${input_path} -o ${output_path} --resize ${width}x${width})?;
+    //try to retrieve width and height.
+    let file = fs::File::open(&input_path)?;
+    let mut reader = {
+        let mut options = gif::DecodeOptions::new();
+        options.allow_unknown_blocks(true);
+        options.read_info(file)?
+    };
+    let (w, h) = match reader.read_next_frame() {
+        Ok(Some(frame)) => (frame.width, frame.height),
+        Ok(None) => (width as u16, width as u16),
+        Err(error) => {
+            log::error!("error decoding gif frame - unable to detect width and height - forcing resize to square: {}", error);
+            (width as u16, width as u16)
+        }
+    };
+    let (w2, h2) = calculate_dimensions(w as u32, h as u32, width);
+    let mut handle = spawn!(gifsicle ${input_path} -o ${output_path} --resize ${w2}x${h2})?;
     if handle.wait().is_err() {
         log::error!(
             "Unable to convert gif from path {} with run_cmd.. Falling back to original image",
@@ -68,32 +106,33 @@ pub fn scaledown_static(data: &[u8], width: u32, format: ImageFormat) -> Result<
         ImageFormat::WebP => ImageFormat::Jpeg,
         _ => format,
     };
+    let (w, h) = calculate_dimensions(img.width(), img.height(), width);
     let mut buff = Cursor::new(Vec::new());
-    img.thumbnail(width, width).write_to(&mut buff, format)?;
+    img.thumbnail(w, h).write_to(&mut buff, format)?;
     log::info!("Resized to {} px in {}", width, Elapsed::from(&start));
     Ok(buff.into_inner())
 }
 
+fn calculate_dimensions(imgw: u32, imgh: u32, width: u32) -> (u32, u32) {
+    if imgw > width && imgw != imgh {
+        ((imgw / (imgw / width)), (imgh / (imgw / width)))
+    } else if imgh > width && imgw != imgh {
+        ((imgw / (imgh / width)), (imgh / (imgh / width)))
+    } else if imgh == imgw {
+        (width, width)
+    } else {
+        (imgw, imgh)
+    }
+}
 pub fn scaledown_png(data: &[u8], width: u32) -> Result<Vec<u8>> {
     let start = Instant::now();
     let decoder = png::Decoder::new(Cursor::new(data));
     let (info, mut reader) = decoder.read_info()?;
     let mut src = vec![0; info.buffer_size()];
     reader.next_frame(&mut src)?;
-    let (w2, h2) = if info.width > width && info.width != info.height {
-        (
-            (info.width / (info.width / width)) as usize,
-            (info.height / (info.width / width)) as usize,
-        )
-    } else if info.height > width && info.width != info.height {
-        (
-            (info.width / (info.height / width)) as usize,
-            (info.height / (info.height / width)) as usize,
-        )
-    } else if info.height == info.width {
-        (width as usize, width as usize)
-    } else {
-        (info.width as usize, info.height as usize)
+    let (w2, h2) = {
+        let x = calculate_dimensions(info.width, info.height, width);
+        (x.0 as usize, x.1 as usize)
     };
     let (w1, h1) = (info.width as usize, info.height as usize);
     let mut dst = vec![0u8; w2 * h2 * info.color_type.samples()];
