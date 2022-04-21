@@ -317,10 +317,31 @@ async fn fetch_image(
 
     //send base image if scale is 0
     if scale == 0 {
-        return Ok(HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
-            .content_type(obj.content_type)
-            .body(obj.data));
+        if obj.content_type.as_ref() == "text/html" || obj.content_type.as_ref() == "text/plain" {
+            log::error!(
+                "Object is not a valid object - Type is: {} . Re-downloading from service: {}/{}",
+                obj.content_type,
+                obj.service.name,
+                obj.name
+            );
+            let obj = obj.download(&client, &cfg).await?.clone();
+            if let Some(s) = obj.status {
+                if !s.is_success() {
+                    log::error!("Error connecting to {}", obj.service.name);
+                    return Ok(HttpResponse::InternalServerError().finish());
+                } else {
+                    return Ok(HttpResponse::Ok()
+                        .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
+                        .content_type(obj.content_type)
+                        .body(obj.data));
+                }
+            }
+        } else {
+            return Ok(HttpResponse::Ok()
+                .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
+                .content_type(obj.content_type)
+                .body(obj.data));
+        }
     }
 
     //Skip processing for images in 'skip_list' array in config file.
