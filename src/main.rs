@@ -2,10 +2,12 @@ use actix_web::{
     error, get,
     http::header::{CacheControl, CacheDirective, HeaderMap},
     http::StatusCode,
-    middleware, web,
+    middleware, post, web,
     web::Data,
+    web::Form,
     App, HttpRequest, HttpResponse, HttpServer,
 };
+//use actix_web_httpauth::extractors::bearer::BearerAuth;
 use anyhow::Result;
 use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
 use image::ImageFormat;
@@ -32,6 +34,7 @@ struct AppConfig {
     health_endpoint: String,
     storage_path: String,
     allowed_sizes: Option<Vec<u32>>,
+    twitter_tokens: Option<Vec<String>>,
     services: Vec<Service>,
     skip_list: Option<Vec<String>>,
 }
@@ -152,6 +155,7 @@ impl Default for AppConfig {
             log_level: String::from("debug"),
             storage_path: String::from("storage"),
             allowed_sizes: None,
+            twitter_tokens: None,
             health_endpoint: String::from("/health"),
             user_agent: format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
             services: vec![Service::default()],
@@ -167,10 +171,56 @@ pub struct Params {
     path: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct TwitterForm {
+    screen_name: Option<String>,
+}
 async fn get_health_status() -> HttpResponse {
     HttpResponse::Ok().content_type("text/plain").body("200 OK")
 }
 
+#[post("/twitter")]
+async fn twitter(
+    //req: HttpRequest,
+    client: web::Data<Client>,
+    cfg: Data<AppConfig>,
+    form: Form<TwitterForm>,
+) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+    //let params = web::Query::<Params>::from_query(req.query_string())?;
+    let screen_names = match form.screen_name.as_ref() {
+        Some(n) => n,
+        None => {
+            log::warn!("Empty query params requesting twitter handle");
+            return Ok(HttpResponse::BadRequest()
+                .content_type("text/plain")
+                .body("Twitter handle not provided"));
+        }
+    };
+    let auth_token = if let Some(list) = &cfg.twitter_tokens {
+        &list[0]
+    } else {
+        log::warn!(
+            "twitter_tokens not found in config file. Please double check your configuration"
+        );
+        return Ok(HttpResponse::BadRequest()
+            .content_type("text/plain")
+            .body("Twitter token not found in config file"));
+    };
+    //log::info!("Hello, user with token {}!", auth.token());
+    let mut res = client
+        .post("https://api.twitter.com/1.1/users/lookup.json")
+        .append_header(("Accept", "application/json"))
+        .bearer_auth(auth_token)
+        .send_form(&[("screen_name", &screen_names)])
+        .await
+        .map_err(error::ErrorInternalServerError)?;
+    let payload = res.body().await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::MaxAge(44000u32)]))
+        .content_type("application/json")
+        .body(payload))
+}
 #[get("/proxy/{service}/{image}")]
 async fn forward(
     payload: web::Payload,
@@ -493,6 +543,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::new(cfg.clone()))
             .service(fetch_image)
             .service(forward)
+            .service(twitter)
     })
     .bind(("0.0.0.0", port))?
     .workers(workers)
