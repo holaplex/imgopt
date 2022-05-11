@@ -1,11 +1,16 @@
 use actix_web::{
-    error, get,
+    error,
+    get,
     http::header::{CacheControl, CacheDirective, HeaderMap},
     http::StatusCode,
-    middleware, post, web,
+    middleware,
+    web,
     web::Data,
-    web::Form,
-    App, HttpRequest, HttpResponse, HttpServer,
+    //web::Form,
+    App,
+    HttpRequest,
+    HttpResponse,
+    HttpServer,
 };
 //use actix_web_httpauth::extractors::bearer::BearerAuth;
 use anyhow::Result;
@@ -171,31 +176,17 @@ pub struct Params {
     path: Option<String>,
 }
 
-#[derive(Deserialize)]
-pub struct TwitterForm {
-    screen_name: Option<String>,
-}
 async fn get_health_status() -> HttpResponse {
     HttpResponse::Ok().content_type("text/plain").body("200 OK")
 }
 
-#[post("/twitter")]
+#[get("/twitter/{handle}")]
 async fn twitter(
-    //req: HttpRequest,
     client: web::Data<Client>,
     cfg: Data<AppConfig>,
-    form: Form<TwitterForm>,
+    data: web::Path<String>,
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
-    //let params = web::Query::<Params>::from_query(req.query_string())?;
-    let screen_names = match form.screen_name.as_ref() {
-        Some(n) => n,
-        None => {
-            log::warn!("Empty query params requesting twitter handle");
-            return Ok(HttpResponse::BadRequest()
-                .content_type("text/plain")
-                .body("Twitter handle not provided"));
-        }
-    };
+    let handle = data.to_string();
     let auth_token = if let Some(list) = &cfg.twitter_tokens {
         &list[0]
     } else {
@@ -206,12 +197,11 @@ async fn twitter(
             .content_type("text/plain")
             .body("Twitter token not found in config file"));
     };
-    //log::info!("Hello, user with token {}!", auth.token());
     let mut res = client
         .post("https://api.twitter.com/1.1/users/lookup.json")
         .append_header(("Accept", "application/json"))
         .bearer_auth(auth_token)
-        .send_form(&[("screen_name", &screen_names)])
+        .send_form(&[("screen_name", &handle)])
         .await
         .map_err(error::ErrorInternalServerError)?;
     let payload = res.body().await?;
@@ -541,9 +531,9 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Logger::default())
             .app_data(Data::new(client))
             .app_data(Data::new(cfg.clone()))
+            .service(twitter)
             .service(fetch_image)
             .service(forward)
-            .service(twitter)
     })
     .bind(("0.0.0.0", port))?
     .workers(workers)
