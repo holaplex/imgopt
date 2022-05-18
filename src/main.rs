@@ -38,12 +38,25 @@ struct AppConfig {
     user_agent: String,
     health_endpoint: String,
     storage_path: String,
-    allowed_sizes: Option<Vec<u32>>,
-    twitter_tokens: Option<Vec<String>>,
+    twitter: Option<TwitterConfig>,
     services: Vec<Service>,
     skip_list: Option<Vec<String>>,
+    allowed_sizes: Option<Vec<u32>>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct TwitterConfig {
+    cache: CacheConfig,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct MediaConfig {
+    cache: CacheConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CacheConfig {
+    max_age: u32,
+}
 #[derive(Clone)]
 struct Object {
     data: Vec<u8>,
@@ -140,12 +153,20 @@ impl Object {
 struct Service {
     name: String,
     endpoint: String,
+    cache: Option<CacheConfig>,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self { max_age: 31536000 }
+    }
 }
 impl Default for Service {
     fn default() -> Self {
         Self {
             name: String::from("ipfs"),
             endpoint: String::from("https://ipfs.io/ipfs"),
+            cache: Some(CacheConfig::default()),
         }
     }
 }
@@ -160,7 +181,7 @@ impl Default for AppConfig {
             log_level: String::from("debug"),
             storage_path: String::from("storage"),
             allowed_sizes: None,
-            twitter_tokens: None,
+            twitter: None,
             health_endpoint: String::from("/health"),
             user_agent: format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
             services: vec![Service::default()],
@@ -184,15 +205,14 @@ async fn get_health_status() -> HttpResponse {
 async fn twitter(
     client: web::Data<Client>,
     cfg: Data<AppConfig>,
+    twitter_token: Data<String>,
     data: web::Path<String>,
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
     let handle = data.to_string();
-    let auth_token = if let Some(list) = &cfg.twitter_tokens {
-        &list[0]
+    let auth_token = if !twitter_token.is_empty() {
+        twitter_token.to_string()
     } else {
-        log::warn!(
-            "twitter_tokens not found in config file. Please double check your configuration"
-        );
+        log::warn!("env var TWITTER_BEARER_TOKEN not found. Twitter endpoint will not work");
         return Ok(HttpResponse::BadRequest()
             .content_type("text/plain")
             .body("Twitter token not found in config file"));
@@ -205,9 +225,15 @@ async fn twitter(
         .await
         .map_err(error::ErrorInternalServerError)?;
     let payload = res.body().await?;
-
+    let cache_cfg = if let Some(twitter_cfg) = cfg.twitter.clone() {
+        twitter_cfg.cache
+    } else {
+        CacheConfig::default()
+    };
     Ok(HttpResponse::Ok()
-        .insert_header(CacheControl(vec![CacheDirective::MaxAge(44000u32)]))
+        .insert_header(CacheControl(vec![CacheDirective::MaxAge(
+            cache_cfg.max_age,
+        )]))
         .content_type("application/json")
         .body(payload))
 }
@@ -240,8 +266,6 @@ async fn forward(
         .map_err(error::ErrorInternalServerError)?;
 
     let mut client_resp = HttpResponse::build(res.status());
-    // Remove `Connection` as per
-    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
     for (header_name, header_value) in res.headers().iter().filter(|(h, _)| *h != "connection") {
         client_resp.insert_header((header_name.clone(), header_value.clone()));
     }
@@ -276,6 +300,7 @@ async fn fetch_image(
             .body("Received endpoint not allowed!"));
     };
     obj.service = service.unwrap().clone();
+    let cache_config = service.unwrap().clone().cache.unwrap_or_default();
     //validate scaling param with allow list in config
     let scale: u32 = params.width.unwrap_or(0);
     if let Some(list) = &cfg.allowed_sizes {
@@ -308,7 +333,9 @@ async fn fetch_image(
         let image_data = utils::read_from_file(&mod_image_path)?;
         obj.content_type = utils::guess_content_type(&mod_image_path)?;
         return Ok(HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
+            .insert_header(CacheControl(vec![CacheDirective::MaxAge(
+                cache_config.max_age,
+            )]))
             .content_type(obj.content_type)
             .body(image_data));
     };
@@ -371,14 +398,18 @@ async fn fetch_image(
                     return Ok(HttpResponse::InternalServerError().finish());
                 } else {
                     return Ok(HttpResponse::Ok()
-                        .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
+                        .insert_header(CacheControl(vec![CacheDirective::MaxAge(
+                            cache_config.max_age,
+                        )]))
                         .content_type(obj.content_type)
                         .body(obj.data));
                 }
             }
         } else {
             return Ok(HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
+                .insert_header(CacheControl(vec![CacheDirective::MaxAge(
+                    cache_config.max_age,
+                )]))
                 .content_type(obj.content_type)
                 .body(obj.data));
         }
@@ -394,7 +425,9 @@ async fn fetch_image(
                 obj.name
             );
             return Ok(HttpResponse::Ok()
-                .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
+                .insert_header(CacheControl(vec![CacheDirective::MaxAge(
+                    cache_config.max_age,
+                )]))
                 .content_type(obj.content_type)
                 .body(obj.data.clone()));
         };
@@ -485,28 +518,32 @@ async fn fetch_image(
     }
 
     Ok(HttpResponse::Ok()
-        .insert_header(CacheControl(vec![CacheDirective::MaxAge(31536000u32)]))
+        .insert_header(CacheControl(vec![CacheDirective::MaxAge(
+            cache_config.max_age,
+        )]))
         .content_type(obj.content_type)
         .body(payload))
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    //Reading config and initial setup
     let path = env::current_dir()?;
+    let twitter_token = match env::var("TWITTER_BEARER_TOKEN") {
+        Ok(val) => val,
+        Err(_) => String::new(),
+    };
     let config_path = env::var("CONFIG_PATH").unwrap_or(format!("{}/config.toml", path.display()));
     let cfg: AppConfig = confy::load_path(&config_path).unwrap_or_else(|e| {
-        println!("==========================");
-        println!("ERROR || {}", e);
-        println!("Loading default config because of above error");
-        println!("All fields are required in order to read from config file.");
-        println!("==========================");
+        log::error!("==========================");
+        log::error!("ERROR || {}", e);
+        log::error!("Loading default config because of above error");
+        log::error!("All fields are required in order to read from config file.");
+        log::error!("==========================");
         AppConfig::default()
     });
 
     let workers = cfg.workers;
     let port = cfg.port;
-
     env_logger::init_from_env(env_logger::Env::new().default_filter_or(&cfg.log_level));
     log::debug!("The current directory is {}", path.display());
     log::debug!("config loaded: {:#?}", cfg);
@@ -515,11 +552,8 @@ async fn main() -> std::io::Result<()> {
     log::info!("starting HTTP server at http://0.0.0.0:{}", cfg.port);
 
     HttpServer::new(move || {
-        // create client _inside_ `HttpServer::new` closure to have one per worker thread
         let client = Client::builder()
-            // Adding a User-Agent header to make requests
             .add_default_header((header::USER_AGENT, cfg.user_agent.clone()))
-            // a "connector" wraps the stream into an encrypted connection
             .connector(
                 Connector::new()
                     .timeout(Duration::from_secs(cfg.req_timeout))
@@ -530,6 +564,7 @@ async fn main() -> std::io::Result<()> {
             .route(&cfg.health_endpoint, web::get().to(get_health_status))
             .wrap(middleware::Logger::default())
             .app_data(Data::new(client))
+            .app_data(Data::new(twitter_token.clone()))
             .app_data(Data::new(cfg.clone()))
             .service(twitter)
             .service(fetch_image)
@@ -541,7 +576,6 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 
-/// Create simple rustls client config from root certificates.
 fn rustls_config() -> ClientConfig {
     let mut root_store = RootCertStore::empty();
     root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
