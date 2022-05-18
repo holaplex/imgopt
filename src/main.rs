@@ -12,6 +12,8 @@ use actix_web::{
     HttpResponse,
     HttpServer,
 };
+use serde_json::Value;
+use std::str;
 //use actix_web_httpauth::extractors::bearer::BearerAuth;
 use anyhow::Result;
 use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
@@ -66,6 +68,32 @@ struct Object {
     response: Option<String>,
     status: Option<StatusCode>,
     headers: Option<HeaderMap>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TwitterProfile {
+    pub handle: String,
+    pub profile_image_url: String,
+    pub profile_image_url_highres: String,
+    pub banner_image_url: String,
+    pub description: String,
+}
+
+impl TwitterProfile {
+    fn build(h: serde_json::Value) -> Self {
+        let image_url = &h[0]["profile_image_url_https"];
+        Self {
+            handle: h[0]["screen_name"].as_str().unwrap().to_string(),
+            profile_image_url: image_url.as_str().unwrap().to_string(),
+            profile_image_url_highres: image_url
+                .as_str()
+                .unwrap()
+                .to_string()
+                .replace("_normal", ""),
+            banner_image_url: h[0]["profile_banner_url"].as_str().unwrap().to_string(),
+            description: h[0]["description"].as_str().unwrap().to_string(),
+        }
+    }
 }
 impl Object {
     fn new(name: String) -> Self {
@@ -217,14 +245,19 @@ async fn twitter(
             .content_type("text/plain")
             .body("Twitter token not found in config file"));
     };
+
+    //Get user data
     let mut res = client
         .post("https://api.twitter.com/1.1/users/lookup.json")
         .append_header(("Accept", "application/json"))
-        .bearer_auth(auth_token)
+        .bearer_auth(&auth_token)
         .send_form(&[("screen_name", &handle)])
         .await
         .map_err(error::ErrorInternalServerError)?;
-    let payload = res.body().await?;
+    let body = &res.body().await?;
+    let data = str::from_utf8(body)?;
+    let tw_handle_data: Value = serde_json::from_str(data)?;
+    let payload = serde_json::to_string_pretty(&TwitterProfile::build(tw_handle_data))?;
     let cache_cfg = if let Some(twitter_cfg) = cfg.twitter.clone() {
         twitter_cfg.cache
     } else {
