@@ -23,16 +23,16 @@ spec:
       - image: 011737333588.dkr.ecr.us-east-1.amazonaws.com/imgopt:main-da4fd9f
         imagePullPolicy: IfNotPresent
         name: imgopt
-        env:
-          - name: CONFIG_PATH
-            value: "/home/imgopt/config.toml"
         command: ["./imgopt"]
-          - name: TWITTER_BEARER_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: twitter-creds
-                key: TWITTER_BEARER_TOKEN
-                optional: false
+        env:
+        - name: CONFIG_PATH
+          value: "/home/imgopt/config.toml"
+        - name: TWITTER_BEARER_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: twitter-creds
+              key: TWITTER_BEARER_TOKEN
+              optional: false
         ports:
         - containerPort: 3030
           name: imgopt
