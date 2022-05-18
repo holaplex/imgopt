@@ -25,7 +25,7 @@ data:
     #skip_list = ["bafybeih6zvkw6fenaprelv45b4zjzazi3mvogvkq6ws75ywyphjk4iyqwi"]
 
     #max age header for twitter responses (in seconds) (optional)
-    twitter.cache.max_age = 3600
+    twitter.cache.max_age = 86400 #24 hours
 
     #Services
     [[services]]
