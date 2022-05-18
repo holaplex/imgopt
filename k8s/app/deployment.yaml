@@ -27,6 +27,12 @@ spec:
           - name: CONFIG_PATH
             value: "/home/imgopt/config.toml"
         command: ["./imgopt"]
+          - name: TWITTER_BEARER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: twitter-creds
+                key: TWITTER_BEARER_TOKEN
+                optional: false
         ports:
         - containerPort: 3030
           name: imgopt

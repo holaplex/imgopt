@@ -14,7 +14,7 @@ data:
     #For load balancer liveness Probe
     health_endpoint = "/health"
     #User agent should be <name>/<version>
-    user_agent = "imgopt/0.1.8"
+    user_agent = "imgopt/0.1.9"
     #use full path if possible
     storage_path = "/home/imgopt/data"
 
@@ -24,15 +24,19 @@ data:
     #Skip certain images from processing (optional)
     #skip_list = ["bafybeih6zvkw6fenaprelv45b4zjzazi3mvogvkq6ws75ywyphjk4iyqwi"]
 
+    #max age header for twitter responses (in seconds) (optional)
+    twitter.cache.max_age = 3600
 
     #Services
     [[services]]
     name = "ipfs"
     endpoint = "https://ipfs.io/ipfs"
+    cache.max_age = 31536000
 
     [[services]]
     name = "arweave"
     endpoint = "https://arweave.net"
+    cache.max_age = 31536000
 
 kind: ConfigMap
 metadata:
