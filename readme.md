@@ -53,6 +53,8 @@ The endpoint should **NOT** contain a closing forward slash.
 [[services]]
 name = "ipfs"
 endpoint = "https://ipfs.io/ipfs"
+#max age header for media files (Optional, default 31536000 seconds)
+cache.max_age = 31536000
 
 [[services]]
 name = "arweave"
@@ -63,6 +65,11 @@ name = "yourservice"
 endpoint = "https://servicewebsite.com"
 
 ```
+
+## Twitter request caching support
+If you want to use `imgopt` to cache API calls to twitter, you need to set up the env var `TWITTER_BEARER_TOKEN` when executing.
+
+
 # Building from source
 The code in this repository can be built using `cargo` without any further dependencies. Just clone the repo and execute `cargo build --release`.
 If you only need `JPEG` and `PNG` resizing you can stop installing things here and just just run the server located in `./target/release/`.

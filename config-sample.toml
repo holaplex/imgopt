@@ -11,26 +11,33 @@ max_body_size_bytes = 100000000 # 100 MB
 #For load balancer liveness Probe
 health_endpoint = "/health"
 #User agent should be <name>/<version>
-user_agent = "imgopt/0.1.6"
+user_agent = "imgopt/0.1.9"
 #use full path if possible
 storage_path = "imgopt-data"
 
 #Limit which width scaling options are available (optional)
 allowed_sizes = [ 600, 100, 500 ]
 
-#Skip certain images from processing (optional)
+#Skip certain images from processing (optional - applies for all services)
 skip_list = []
+
+#max age header for twitter (in seconds) (optional)
+twitter.cache.max_age = 3600
 
 #Services
 [[services]]
 name = "ipfs"
 endpoint = "https://ipfs.io/ipfs"
+#max age header for media files (Optional, default 31536000)
+cache.max_age = 31536000
 
 [[services]]
 name = "arweave"
 endpoint = "https://arweave.net"
+cache.max_age = 31536000
 
 #Continue adding services ..
 #[[services]]
 #name = "service-name"
 #endpoint = "https://service-url"
+#cache.max_age = 31536000
