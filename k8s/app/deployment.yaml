@@ -41,8 +41,8 @@ spec:
             memory: 128Mi
             cpu: 250m
           limits:
-            memory: 1Gi
-            cpu: 700m
+            memory: 2Gi
+            cpu: 1000m
         volumeMounts:
         - name: imgopt-config
           mountPath: /home/imgopt/config.toml
