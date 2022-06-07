@@ -12,7 +12,7 @@ use actix_web::{
     HttpResponse,
     HttpServer,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::str;
 //use actix_web_httpauth::extractors::bearer::BearerAuth;
 use anyhow::Result;
@@ -240,10 +240,16 @@ async fn twitter(
     let auth_token = if !twitter_token.is_empty() {
         twitter_token.to_string()
     } else {
-        log::warn!("env var TWITTER_BEARER_TOKEN not found. Twitter endpoint will not work");
+        let msg = "env var TWITTER_BEARER_TOKEN not found. Twitter endpoint will not work";
+        log::warn!("{}", msg);
+        let json = json!({
+            "status": 400,
+            "error": msg
+
+        });
         return Ok(HttpResponse::BadRequest()
-            .content_type("text/plain")
-            .body("Twitter token not found in config file"));
+            .content_type("application/json")
+            .body(serde_json::to_string(&json).unwrap()));
     };
 
     //Get user data
@@ -281,10 +287,16 @@ async fn forward(
     let svc = data.0.to_string();
     let service: Option<&Service> = cfg.services.iter().find(|s| s.name == svc);
     if service.is_none() {
-        log::warn!("Received endpoint is not allowed");
+        let msg = format!("Received endpoint: {} is not allowed", svc);
+        let json = json!({
+            "status": 400,
+            "error": msg
+
+        });
+        log::warn!("{}", msg);
         return Ok(HttpResponse::BadRequest()
-            .content_type("text/plain")
-            .body("Received endpoint not allowed!"));
+            .content_type("application/json")
+            .body(serde_json::to_string(&json).unwrap()));
     };
     let service = service.unwrap();
     let image = data.1.to_string();
@@ -327,10 +339,16 @@ async fn fetch_image(
     let svc = data.0.to_string();
     let service: Option<&Service> = cfg.services.iter().find(|s| s.name == svc);
     if service.is_none() {
-        log::warn!("Received endpoint is not allowed");
+        let msg = format!("Received endpoint: {} is not allowed", svc);
+        let json = json!({
+            "status": 400,
+            "error": msg
+
+        });
+        log::warn!("{}", msg);
         return Ok(HttpResponse::BadRequest()
-            .content_type("text/plain")
-            .body("Received endpoint not allowed!"));
+            .content_type("application/json")
+            .body(serde_json::to_string(&json).unwrap()));
     };
     obj.service = service.unwrap().clone();
     let cache_config = service.unwrap().clone().cache.unwrap_or_default();
@@ -339,13 +357,16 @@ async fn fetch_image(
     if let Some(list) = &cfg.allowed_sizes {
         let scale_validation: Vec<_> = list.iter().filter(|&s| s == &scale || scale == 0).collect();
         if scale_validation.get(0).is_none() {
-            log::warn!(
-                "Received parameter not allowed. Got request to scale to {}",
-                scale
-            );
+            let msg = format!("Received scaling parameter: {} is not allowed", scale);
+            log::warn!("{}", msg);
+            let json = json!({
+                "status": 400,
+                "error": msg
+
+            });
             return Ok(HttpResponse::BadRequest()
-                .content_type("text/plain")
-                .body("Scaling value not allowed!"));
+                .content_type("application/json")
+                .body(serde_json::to_string(&json).unwrap()));
         };
     };
 
