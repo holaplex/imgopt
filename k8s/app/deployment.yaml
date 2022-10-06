@@ -5,7 +5,7 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 1
+  replicas: 4
   strategy:
     type: RollingUpdate
     rollingUpdate:
