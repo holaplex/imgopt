@@ -14,7 +14,6 @@ use actix_web::{
 };
 use serde_json::{json, Value};
 use std::str;
-//use actix_web_httpauth::extractors::bearer::BearerAuth;
 use anyhow::Result;
 use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
 use image::ImageFormat;
@@ -125,7 +124,7 @@ impl Object {
         let start = Instant::now();
         log::info!("Downloading object from: {}", url);
         self.response = if url.is_empty() {
-            log::error!("Error! url not provided");
+            log::warn!("Error! url not provided");
             Some(String::from("URL not provided"))
         } else {
             None
@@ -137,7 +136,7 @@ impl Object {
             .await?;
 
         if !res.status().is_success() {
-            log::error!(
+            log::warn!(
                 "{} did not return expected object: {} -- Response: {:#?}",
                 self.service.name,
                 self.name,
@@ -418,7 +417,7 @@ async fn fetch_image(
             //</proxy/svc>)
             if let Some(s) = obj.status {
                 if !s.is_success() {
-                    log::error!("Error connecting to {}", obj.service.name);
+                    log::warn!("Error connecting to {}", obj.service.name);
                     return Ok(HttpResponse::InternalServerError().finish());
                 }
             }
@@ -439,7 +438,7 @@ async fn fetch_image(
     //send base image if scale is 0
     if scale == 0 {
         if obj.content_type.as_ref() == "text/html" || obj.content_type.as_ref() == "text/plain" {
-            log::error!(
+            log::warn!(
                 "Object is not a valid object - Type is: {} . Re-downloading from service: {}/{}",
                 obj.content_type,
                 obj.service.name,
@@ -448,7 +447,7 @@ async fn fetch_image(
             let obj = obj.download(&client, &cfg).await?.clone();
             if let Some(s) = obj.status {
                 if !s.is_success() {
-                    log::error!("Error connecting to {}", obj.service.name);
+                    log::warn!("Error connecting to {}", obj.service.name);
                     return Ok(HttpResponse::InternalServerError().finish());
                 } else {
                     return Ok(HttpResponse::Ok()
@@ -506,7 +505,7 @@ async fn fetch_image(
         }
         "text/html" | "text/plain" => {
             //download probably failed. try again
-            log::error!(
+            log::warn!(
                 "Object is not a valid image. Re-downloading from service: {}/{}",
                 obj.service.name,
                 obj.name
@@ -536,7 +535,7 @@ async fn fetch_image(
     let payload = match data {
         Ok(k) => k,
         Err(e) => {
-            log::error!(
+            log::warn!(
                 "Error reading/decoding file {}/{} | {}",
                 obj.service.name,
                 obj.name,
@@ -588,11 +587,11 @@ async fn main() -> std::io::Result<()> {
     };
     let config_path = env::var("CONFIG_PATH").unwrap_or(format!("{}/config.toml", path.display()));
     let cfg: AppConfig = confy::load_path(&config_path).unwrap_or_else(|e| {
-        log::error!("==========================");
-        log::error!("ERROR || {}", e);
-        log::error!("Loading default config because of above error");
-        log::error!("All fields are required in order to read from config file.");
-        log::error!("==========================");
+        log::warn!("==========================");
+        log::warn!("ERROR || {}", e);
+        log::warn!("Loading default config because of above error");
+        log::warn!("All fields are required in order to read from config file.");
+        log::warn!("==========================");
         AppConfig::default()
     });
 

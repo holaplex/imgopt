@@ -2,7 +2,7 @@ apiVersion: v1
 data:
   config.toml: |
     #Possible values -- debug, info, warn, error
-    log_level = "warn"
+    log_level = "error"
     #port for the server to listen on
     port = 3030
     #CPU Threads for actix
