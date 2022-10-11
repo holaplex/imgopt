@@ -4,9 +4,9 @@ log_level = "info"
 port = 3030
 #CPU Threads for actix
 workers = 8
-#timeout when contacting listed services
+#timeout when contacting listed origins
 req_timeout = 360
-#Limit response size from your services
+#Limit response size from your origins
 max_body_size_bytes = 100000000 # 100 MB
 #For load balancer liveness Probe
 health_endpoint = "/health"
@@ -18,26 +18,26 @@ storage_path = "imgopt-data"
 #Limit which width scaling options are available (optional)
 allowed_sizes = [ 600, 100, 500 ]
 
-#Skip certain images from processing (optional - applies for all services)
+#Skip certain images from processing (optional - applies for all origins)
 skip_list = []
 
 #max age header for twitter (in seconds) (optional)
 twitter.cache.max_age = 3600
 
-#Services
-[[services]]
+#origins
+[[origins]]
 name = "ipfs"
 endpoint = "https://ipfs.io/ipfs"
 #max age header for media files (Optional, default 31536000)
 cache.max_age = 31536000
 
-[[services]]
+[[origins]]
 name = "arweave"
 endpoint = "https://arweave.net"
 cache.max_age = 31536000
 
-#Continue adding services ..
-#[[services]]
+#Continue adding origins ..
+#[[origins]]
 #name = "service-name"
 #endpoint = "https://service-url"
 #cache.max_age = 31536000
