@@ -16,13 +16,14 @@ use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
 use config::{AppConfig, CacheConfig, Origin};
 use object::Object;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
-use serde_derive::{Deserialize, Serialize};
+use serde_derive::Deserialize;
 use serde_json::{json, Value};
 use std::env;
 use std::str;
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 use tw::TwitterProfile;
+use url::Url;
 mod config;
 mod img;
 mod object;
@@ -35,6 +36,7 @@ pub struct Params {
     force: Option<bool>,
     engine: Option<u32>,
     path: Option<String>,
+    url: Option<String>,
 }
 
 async fn get_health_status() -> HttpResponse {
@@ -65,17 +67,17 @@ async fn twitter(
     };
 
     //Get user data
-    let mut res = client
+    let res = client
         .post("https://api.twitter.com/1.1/users/lookup.json")
         .append_header(("Accept", "application/json"))
         .bearer_auth(&auth_token)
         .send_form(&[("screen_name", &handle)])
         .await
-        .map_err(error::ErrorInternalServerError)?;
-    let body = &res.body().await?;
-    let data = str::from_utf8(body)?;
-    let tw_handle_data: Value = serde_json::from_str(data)?;
-    let payload = serde_json::to_string_pretty(&TwitterProfile::build(tw_handle_data))?;
+        .map_err(error::ErrorInternalServerError)?
+        .json::<serde_json::Value>()
+        .await?;
+
+    let payload = serde_json::to_string_pretty(&TwitterProfile::build(res))?;
 
     let cache = if let Some(twitter_cfg) = cfg.twitter.clone() {
         twitter_cfg.cache
@@ -96,7 +98,7 @@ async fn forward(
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
     //validate origin with allow list in config
     let (origin, filename) = data.into_inner();
-    let origin = match cfg.get_origin(&origin) {
+    let origin = match cfg.validate_origin(&origin) {
         Some(o) => o,
         None => return Ok(invalid_param("origin", origin)),
     };
@@ -116,6 +118,126 @@ async fn forward(
     Ok(client_resp.streaming(res))
 }
 
+#[get("/")]
+async fn get(
+    req: HttpRequest,
+    client: Data<Client>,
+    cfg: Data<AppConfig>,
+) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+    let params = web::Query::<Params>::from_query(req.query_string())?;
+    let url = if let Some(u) = &params.url {
+        let url = match Url::parse(&u) {
+            Ok(url) => url,
+            Err(e) => {
+                let msg = format!(
+                    "Unable to parse url: {} | error: {}",
+                    params.url.as_ref().unwrap(),
+                    e
+                );
+                let json: Value = json!({
+                    "status": 400,
+                    "error": msg
+                });
+                return Ok(HttpResponse::BadRequest()
+                    .content_type("application/json")
+                    .body(serde_json::to_string(&json).unwrap()));
+            }
+        };
+        url
+    } else {
+        let json = json!({
+            "status": 400,
+            "error": "Please provide an url using the '?url=' parameter"
+        });
+        return Ok(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(serde_json::to_string(&json).unwrap()));
+    };
+
+    let scale = match cfg.validate_scale(params.width) {
+        Some(s) => s,
+        None => return Ok(invalid_param("scale", params.width.unwrap().to_string())),
+    };
+    let mut segments = url.path_segments().map(|c| c.collect::<Vec<_>>()).unwrap();
+    let filename = segments.first().unwrap().to_string();
+    let mut obj = Object::new(&filename);
+
+    let origin = Origin {
+        name: url.host_str().unwrap().to_string(),
+        endpoint: format!("{}://{}", url.scheme(), url.host_str().unwrap().to_string()),
+        cache: CacheConfig::default(),
+    };
+    segments.remove(0);
+    obj.origin(&origin).scale(scale);
+    obj.rename(&segments.join("/"));
+    //Creating required directories
+    obj.set_paths(&cfg.storage_path)
+        .try_open()?
+        .create_dir(&cfg.storage_path)?;
+
+    if params.force.unwrap_or(false) || obj.data.is_empty() {
+        obj.get_retries(&client, &cfg).await?;
+        if obj.should_retry() {
+            obj.download(&client, &cfg).await?;
+            obj.update_retries(&client, &cfg).await?;
+        } else {
+            let json = json!({
+                "status": 400,
+                "error": format!(
+                    "Max retries reached. Skipping"
+                )
+
+            });
+            log::error!("Max retries for object: {}/{}", obj.origin.endpoint, obj.name);
+            return Ok(HttpResponse::BadRequest()
+                .content_type("application/json")
+                .body(serde_json::to_string(&json)?));
+        }
+    };
+    //validate content
+    let valid = !matches!(obj.content_type.as_ref(), "text/plain" | "text/html");
+
+    let (content_type, payload) = if let Some(s) = obj.status {
+        match s.is_success() && valid {
+            true => match obj.scale {
+                0 => Ok((obj.content_type.clone(), obj.data.clone())),
+                _ => obj.process(params.engine.unwrap_or(0)),
+            },
+            false => {
+                obj.update_retries(&client, &cfg).await?;
+                std::fs::remove_file(&obj.paths.base)?;
+                let json = json!({
+                    "status": 400,
+                    "error": format!(
+                        "Object downloaded from {}/{} is not a supported asset",
+                        obj.origin.name,
+                        obj.name
+                    )
+
+                });
+                return Ok(HttpResponse::BadRequest()
+                    .content_type("application/json")
+                    .body(serde_json::to_string(&json)?));
+            }
+        }?
+    } else {
+        log::warn!("Error connecting to {}", obj.origin.name);
+        return Ok(HttpResponse::InternalServerError().finish());
+    };
+    //save image to disk if modified
+    if payload != obj.data && scale != 0 {
+        //save by width for quick caching
+        utils::write_to_file(payload.clone(), &obj.paths.modified)?;
+    }
+    let res = HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::MaxAge(
+            obj.origin.cache.max_age,
+        )]))
+        .content_type(content_type)
+        .body(payload);
+    Ok(res)
+}
+
 #[get("/{origin}/{filename}")]
 async fn fetch_object(
     req: HttpRequest,
@@ -125,13 +247,14 @@ async fn fetch_object(
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
     let (origin, filename) = data.into_inner();
     let params = web::Query::<Params>::from_query(req.query_string())?;
+
     //Validate origin
-    let origin = match cfg.get_origin(&origin) {
+    let origin = match cfg.validate_origin(&origin) {
         Some(o) => o,
         None => return Ok(invalid_param("origin", origin)),
     };
     //validate scaling param
-    let scale = match cfg.get_scale(params.width) {
+    let scale = match cfg.validate_scale(params.width) {
         Some(s) => s,
         None => return Ok(invalid_param("scale", params.width.unwrap().to_string())),
     };
@@ -147,7 +270,23 @@ async fn fetch_object(
         .create_dir(&cfg.storage_path)?;
 
     if params.force.unwrap_or(false) || obj.data.is_empty() {
-        obj.download(&client, &cfg).await?;
+        obj.get_retries(&client, &cfg).await?;
+        match obj.should_retry() {
+            true => obj.download(&client, &cfg).await?,
+            false => {
+                let json = json!({
+                    "status": 400,
+                    "error": format!(
+                        "Max retries reached. Skipping"
+                    )
+
+                });
+            log::error!("Max retries for object: {}/{}", obj.origin.endpoint, obj.name);
+            return Ok(HttpResponse::BadRequest()
+                .content_type("application/json")
+                .body(serde_json::to_string(&json)?));
+            }
+        };
     }
     //validate content
     let valid = !matches!(obj.content_type.as_ref(), "text/plain" | "text/html");
@@ -160,13 +299,20 @@ async fn fetch_object(
             },
             false => {
                 //Take note in db, dont retry.
-                log::warn!(
-                    "Object from {}/{} is not valid. removing",
-                    obj.origin.name,
-                    obj.name
-                );
+
                 std::fs::remove_file(&obj.paths.base)?;
-                return Ok(HttpResponse::InternalServerError().finish());
+                let json = json!({
+                    "status": 400,
+                    "error": format!(
+                        "Object downloaded from {}/{} is not a supported asset",
+                        obj.origin.name,
+                        obj.name
+                    )
+
+                });
+                return Ok(HttpResponse::BadRequest()
+                    .content_type("application/json")
+                    .body(serde_json::to_string(&json)?));
             }
         }?
     } else {
@@ -229,6 +375,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::new(twitter_token.clone()))
             .app_data(Data::new(cfg.clone()))
             .service(twitter)
+            .service(get)
             .service(fetch_object)
             .service(forward)
     })

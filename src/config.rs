@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub user_agent: String,
     pub health_endpoint: String,
     pub storage_path: String,
+    pub kvstore_uri: String,
     pub twitter: Option<TwitterConfig>,
     pub origins: Vec<Origin>,
     pub skip_list: Option<Vec<String>>,
@@ -36,15 +37,15 @@ pub struct Origin {
     pub cache: CacheConfig,
 }
 impl AppConfig {
-    pub fn get_origin(&self, origin: &str) -> Option<Origin> {
+    pub fn validate_origin(&self, origin: &str) -> Option<Origin> {
         self.origins.clone().into_iter().find(|o| o.name == origin)
     }
-    pub fn get_scale(&self, scale: Option<u32>) -> Option<u32> {
+    pub fn validate_scale(&self, scale: Option<u32>) -> Option<u32> {
         let allowed = self.allowed_sizes.clone().unwrap_or_default();
-        if allowed.is_empty() {
+        if allowed.is_empty() || scale.is_none() {
             Some(scale.unwrap_or(0))
         } else {
-            allowed.into_iter().find(|s| s == &scale.unwrap())
+            allowed.into_iter().find(|s| s == &scale.unwrap_or(0))
         }
     }
 }
@@ -71,8 +72,9 @@ impl Default for AppConfig {
             req_timeout: 15,
             skip_list: None,
             max_body_size_bytes: 60000000,
-            log_level: String::from("debug"),
-            storage_path: String::from("storage"),
+            log_level: "debug".to_string(),
+            storage_path: "storage".to_string(),
+            kvstore_uri: "http://127.0.0.1:3031".to_string(),
             allowed_sizes: None,
             twitter: None,
             health_endpoint: String::from("/health"),
