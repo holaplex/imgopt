@@ -5,7 +5,6 @@ use std::fmt;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
-
 pub struct Elapsed(Duration);
 impl Elapsed {
     pub fn from(start: &Instant) -> Self {
@@ -41,8 +40,8 @@ pub fn read_from_file(path: &str) -> Result<Vec<u8>> {
     Ok(image_data)
 }
 
-pub fn guess_content_type(path: &str) -> Result<Mime> {
+pub fn guess_content_type(path: &str) -> Result<Mime, Box<dyn std::error::Error>> {
     let mut proc = spawn_with_output!(file --mime-type --mime-encoding -0 ${path} | cut -d " " -f2 | tr -d ';')?;
     let output = proc.wait_with_output()?;
-    Ok(output.parse::<mime::Mime>().unwrap())
+    Ok(output.parse::<Mime>()?)
 }

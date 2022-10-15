@@ -1,43 +1,50 @@
 #Possible values -- debug, info, warn, error
-log_level = "info"
+log_level = "warn"
 #port for the server to listen on
 port = 3030
 #CPU Threads for actix
 workers = 8
-#timeout when contacting listed services
+#timeout when contacting listed origins
 req_timeout = 360
-#Limit response size from your services
+#Limit response size from your origins
 max_body_size_bytes = 100000000 # 100 MB
 #For load balancer liveness Probe
 health_endpoint = "/health"
 #User agent should be <name>/<version>
-user_agent = "imgopt/0.1.9"
+user_agent = "imgopt/0.2.0"
 #use full path if possible
-storage_path = "imgopt-data"
-
+storage_path = "storage"
 #Limit which width scaling options are available (optional)
-allowed_sizes = [ 600, 100, 500 ]
+allowed_sizes = [ 50, 100, 200, 400, 500, 600, 800, 700, 900, 1000, 1100, 1200, 1300, 1400, 1500 ]
 
-#Skip certain images from processing (optional - applies for all services)
-skip_list = []
+#Skip certain images from processing (optional - applies for all origins)
+#skip_list = ["banner.jpg"]
 
 #max age header for twitter (in seconds) (optional)
 twitter.cache.max_age = 3600
+#Set to true will enable the query parameter ?url= to cache and process an asset found in the provided endpoint
+#Ex: localhost:3030?url=https://yourdomain.com/testimage.png&width=100
+allow_any_origin=true
 
-#Services
-[[services]]
+kvstore_uri = "http://127.0.0.1:3050"
+#Number of retries when downloading an asset
+max_retries = 5
+
+
+#origins
+[[origins]]
 name = "ipfs"
 endpoint = "https://ipfs.io/ipfs"
 #max age header for media files (Optional, default 31536000)
 cache.max_age = 31536000
 
-[[services]]
+[[origins]]
 name = "arweave"
 endpoint = "https://arweave.net"
 cache.max_age = 31536000
 
-#Continue adding services ..
-#[[services]]
+#Continue adding origins ..
+#[[origins]]
 #name = "service-name"
 #endpoint = "https://service-url"
 #cache.max_age = 31536000
