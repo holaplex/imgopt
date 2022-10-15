@@ -3,7 +3,7 @@ use crate::{
     img, json,
     utils::{self, Elapsed},
     Url, CONTENT_TYPE,
-    {web::Data, HeaderMap, StatusCode},
+    {web::Data, HeaderMap, HttpResponse, StatusCode},
     {Duration, Instant},
 };
 use anyhow::Result;
@@ -50,7 +50,9 @@ impl Object {
     }
     pub fn create_dir(&self, path: &str) -> Result<()> {
         fs::create_dir_all(format!("{}/base/{}", path, self.origin.name))?;
-        fs::create_dir_all(format!("{}/mod/{}/{}", path, self.origin.name, self.scale))?;
+        if self.scale != 0 {
+            fs::create_dir_all(format!("{}/mod/{}/{}", path, self.origin.name, self.scale))?;
+        }
         Ok(())
     }
     pub fn try_open(&mut self) -> Result<&Self, Box<dyn std::error::Error>> {
@@ -100,8 +102,43 @@ impl Object {
             .digest()
             .to_string()
     }
+    pub fn skip(&self) -> Result<HttpResponse> {
+        let json = json!({
+            "status": 400,
+            "error":
+                "Max retries reached. Skipping"
+
+        });
+        log::error!("Max retries reached for url: {}", self.get_url()?);
+        Ok(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(serde_json::to_string(&json)?))
+    }
+    pub fn is_valid(&self) -> bool {
+        !matches!(self.content_type.as_ref(), "text/plain" | "text/html")
+    }
+    pub fn save(&self, payload: Vec<u8>) -> Result<()> {
+        if payload != self.data && self.scale != 0 {
+            utils::write_to_file(payload, &self.paths.modified)?;
+        }
+        Ok(())
+    }
     pub fn should_retry(&self) -> bool {
         self.retries < 5
+    }
+    pub fn remove_file(&self) -> Result<HttpResponse> {
+        std::fs::remove_file(&self.paths.base)?;
+        let json = json!({
+            "status": 400,
+            "error": format!(
+                "Object downloaded from {}/{} is not a supported asset",
+                self.origin.name,
+                self.name
+            )
+        });
+        Ok(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(serde_json::to_string(&json)?))
     }
     pub async fn update_retries(
         &mut self,
@@ -144,7 +181,7 @@ impl Object {
             .await?;
         match res.status() {
             StatusCode::NOT_FOUND => {
-                self.update_retries(&client, &cfg).await?;
+                self.update_retries(client, cfg).await?;
             }
             StatusCode::OK => {
                 let data = res.json::<serde_json::Value>().await?;
@@ -155,16 +192,19 @@ impl Object {
         };
         Ok(self)
     }
+    fn get_url(&self) -> Result<Url> {
+        Ok(Url::parse(&format!(
+            "{}/{}",
+            self.origin.endpoint,
+            self.name.replace("-_-", "/")
+        ))?)
+    }
     pub async fn download(
         &mut self,
         client: &Data<awc::Client>,
         cfg: &Data<AppConfig>,
     ) -> Result<&Self, Box<dyn std::error::Error>> {
-        let url = Url::parse(&format!(
-            "{}/{}",
-            self.origin.endpoint,
-            self.name.replace("-_-", "/")
-        ))?;
+        let url = self.get_url()?;
         let start = Instant::now();
         log::info!("Downloading from url: {}", url);
         let connector = client
@@ -178,22 +218,21 @@ impl Object {
                     r
                 } else {
                     log::warn!(
-                        "{} did not return expected object: {} -- Response: {:#?}",
-                        self.origin.name,
-                        self.name,
+                        "{} did not return expected object -- Response: {:#?}",
+                        self.get_url()?,
                         r
                     );
-                    self.update_retries(&client, &cfg).await?;
+                    self.update_retries(client, cfg).await?;
                     return Ok(self);
                 }
             }
             Err(e) => {
                 log::warn!(
                     "Error while connecting to {} | Error: {}",
-                    self.origin.endpoint,
+                    self.get_url()?,
                     e
                 );
-                self.update_retries(&client, &cfg).await?;
+                self.update_retries(client, cfg).await?;
                 return Ok(self);
             }
         };

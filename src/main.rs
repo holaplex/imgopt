@@ -1,16 +1,10 @@
 use actix_web::{
-    error,
-    get,
+    error, get,
     http::header::{CacheControl, CacheDirective, HeaderMap},
     http::StatusCode,
-    middleware,
-    web,
+    middleware, web,
     web::Data,
-    //web::Form,
-    App,
-    HttpRequest,
-    HttpResponse,
-    HttpServer,
+    App, HttpRequest, HttpResponse, HttpServer,
 };
 use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
 use config::{AppConfig, CacheConfig, Origin};
@@ -18,10 +12,11 @@ use object::Object;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use serde_derive::Deserialize;
 use serde_json::{json, Value};
-use std::env;
-use std::str;
-use std::time::Duration;
-use std::{sync::Arc, time::Instant};
+use std::{
+    env, str,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tw::TwitterProfile;
 use url::Url;
 mod config;
@@ -89,6 +84,7 @@ async fn twitter(
         .content_type("application/json")
         .body(payload))
 }
+
 #[get("/proxy/{origin}/{filename}")]
 async fn forward(
     payload: web::Payload,
@@ -100,7 +96,7 @@ async fn forward(
     let (origin, filename) = data.into_inner();
     let origin = match cfg.validate_origin(&origin) {
         Some(o) => o,
-        None => return Ok(invalid_param("origin", origin)),
+        None => return Ok(invalid_value("origin", origin)),
     };
     let url = format!("{}/{}", origin.endpoint, filename);
     let res = client
@@ -125,18 +121,25 @@ async fn get(
     cfg: Data<AppConfig>,
 ) -> Result<HttpResponse, Box<dyn std::error::Error>> {
     let params = web::Query::<Params>::from_query(req.query_string())?;
+    if !cfg.allow_any_origin {
+        let json: Value = json!({
+            "status": 400,
+            "error": "endpoint disabled. Add allow_any_origin=true to your config.toml to eanable"
+        });
+        return Ok(HttpResponse::BadRequest()
+            .content_type("application/json")
+            .body(serde_json::to_string(&json).unwrap()));
+    }
     let url = if let Some(u) = &params.url {
-        let url = match Url::parse(&u) {
+        let url = match Url::parse(u) {
             Ok(url) => url,
             Err(e) => {
-                let msg = format!(
-                    "Unable to parse url: {} | error: {}",
-                    params.url.as_ref().unwrap(),
-                    e
-                );
                 let json: Value = json!({
                     "status": 400,
-                    "error": msg
+                    "error": &format!(
+                    "Unable to parse url: {} | error: {}",
+                    params.url.as_ref().unwrap(),
+                    e)
                 });
                 return Ok(HttpResponse::BadRequest()
                     .content_type("application/json")
@@ -147,7 +150,7 @@ async fn get(
     } else {
         let json = json!({
             "status": 400,
-            "error": "Please provide an url using the '?url=' parameter"
+            "error": "Please provide an url using the '?url=' query parameter"
         });
         return Ok(HttpResponse::BadRequest()
             .content_type("application/json")
@@ -156,21 +159,29 @@ async fn get(
 
     let scale = match cfg.validate_scale(params.width) {
         Some(s) => s,
-        None => return Ok(invalid_param("scale", params.width.unwrap().to_string())),
+        None => return Ok(invalid_value("width", params.width.unwrap().to_string())),
     };
-    let mut segments = url.path_segments().map(|c| c.collect::<Vec<_>>()).unwrap();
+    let mut segments = match url.path_segments().map(|c| c.collect::<Vec<_>>()) {
+        Some(p) => {
+            if p[0].is_empty() {
+                return Ok(invalid_value("url", url.to_string()));
+            } else {
+                p
+            }
+        }
+        None => return Ok(invalid_value("url", url.to_string())),
+    };
     let filename = segments.first().unwrap().to_string();
     let mut obj = Object::new(&filename);
-
+    let domain = url.host_str().unwrap().to_string();
     let origin = Origin {
-        name: url.host_str().unwrap().to_string(),
-        endpoint: format!("{}://{}", url.scheme(), url.host_str().unwrap().to_string()),
+        name: domain,
+        endpoint: format!("https://{}", url.host_str().unwrap()),
         cache: CacheConfig::default(),
     };
     segments.remove(0);
     obj.origin(&origin).scale(scale);
     obj.rename(&segments.join("/"));
-    //Creating required directories
     obj.set_paths(&cfg.storage_path)
         .try_open()?
         .create_dir(&cfg.storage_path)?;
@@ -179,56 +190,29 @@ async fn get(
         obj.get_retries(&client, &cfg).await?;
         if obj.should_retry() {
             obj.download(&client, &cfg).await?;
-            obj.update_retries(&client, &cfg).await?;
         } else {
-            let json = json!({
-                "status": 400,
-                "error": format!(
-                    "Max retries reached. Skipping"
-                )
-
-            });
-            log::error!("Max retries for object: {}/{}", obj.origin.endpoint, obj.name);
-            return Ok(HttpResponse::BadRequest()
-                .content_type("application/json")
-                .body(serde_json::to_string(&json)?));
+            return Ok(obj.skip()?);
         }
     };
-    //validate content
-    let valid = !matches!(obj.content_type.as_ref(), "text/plain" | "text/html");
 
     let (content_type, payload) = if let Some(s) = obj.status {
-        match s.is_success() && valid {
-            true => match obj.scale {
-                0 => Ok((obj.content_type.clone(), obj.data.clone())),
-                _ => obj.process(params.engine.unwrap_or(0)),
-            },
-            false => {
-                obj.update_retries(&client, &cfg).await?;
-                std::fs::remove_file(&obj.paths.base)?;
-                let json = json!({
-                    "status": 400,
-                    "error": format!(
-                        "Object downloaded from {}/{} is not a supported asset",
-                        obj.origin.name,
-                        obj.name
-                    )
-
-                });
-                return Ok(HttpResponse::BadRequest()
-                    .content_type("application/json")
-                    .body(serde_json::to_string(&json)?));
+        match s.is_success() && obj.is_valid() {
+            true => {
+                if obj.scale == 0 {
+                    Ok((obj.content_type.clone(), obj.data.clone()))
+                } else {
+                    obj.process(params.engine.unwrap_or(0))
+                }
             }
+            false => return Ok(obj.update_retries(&client, &cfg).await?.remove_file()?),
         }?
     } else {
         log::warn!("Error connecting to {}", obj.origin.name);
         return Ok(HttpResponse::InternalServerError().finish());
     };
-    //save image to disk if modified
-    if payload != obj.data && scale != 0 {
-        //save by width for quick caching
-        utils::write_to_file(payload.clone(), &obj.paths.modified)?;
-    }
+
+    obj.save(payload.clone())?;
+
     let res = HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::MaxAge(
             obj.origin.cache.max_age,
@@ -251,12 +235,12 @@ async fn fetch_object(
     //Validate origin
     let origin = match cfg.validate_origin(&origin) {
         Some(o) => o,
-        None => return Ok(invalid_param("origin", origin)),
+        None => return Ok(invalid_value("origin", origin)),
     };
     //validate scaling param
     let scale = match cfg.validate_scale(params.width) {
         Some(s) => s,
-        None => return Ok(invalid_param("scale", params.width.unwrap().to_string())),
+        None => return Ok(invalid_value("width", params.width.unwrap().to_string())),
     };
     //init object
     let mut obj = Object::new(&filename);
@@ -271,59 +255,31 @@ async fn fetch_object(
 
     if params.force.unwrap_or(false) || obj.data.is_empty() {
         obj.get_retries(&client, &cfg).await?;
-        match obj.should_retry() {
-            true => obj.download(&client, &cfg).await?,
-            false => {
-                let json = json!({
-                    "status": 400,
-                    "error": format!(
-                        "Max retries reached. Skipping"
-                    )
-
-                });
-            log::error!("Max retries for object: {}/{}", obj.origin.endpoint, obj.name);
-            return Ok(HttpResponse::BadRequest()
-                .content_type("application/json")
-                .body(serde_json::to_string(&json)?));
-            }
-        };
-    }
-    //validate content
-    let valid = !matches!(obj.content_type.as_ref(), "text/plain" | "text/html");
+        if obj.should_retry() {
+            obj.download(&client, &cfg).await?;
+        } else {
+            return Ok(obj.skip()?);
+        }
+    };
 
     let (content_type, payload) = if let Some(s) = obj.status {
-        match s.is_success() && valid {
-            true => match obj.scale {
-                0 => Ok((obj.content_type.clone(), obj.data.clone())),
-                _ => obj.process(params.engine.unwrap_or(0)),
-            },
-            false => {
-                //Take note in db, dont retry.
-
-                std::fs::remove_file(&obj.paths.base)?;
-                let json = json!({
-                    "status": 400,
-                    "error": format!(
-                        "Object downloaded from {}/{} is not a supported asset",
-                        obj.origin.name,
-                        obj.name
-                    )
-
-                });
-                return Ok(HttpResponse::BadRequest()
-                    .content_type("application/json")
-                    .body(serde_json::to_string(&json)?));
+        match s.is_success() && obj.is_valid() {
+            true => {
+                if obj.scale == 0 {
+                    Ok((obj.content_type.clone(), obj.data.clone()))
+                } else {
+                    obj.process(params.engine.unwrap_or(0))
+                }
             }
+            false => return Ok(obj.update_retries(&client, &cfg).await?.remove_file()?),
         }?
     } else {
         log::warn!("Error connecting to {}", obj.origin.name);
         return Ok(HttpResponse::InternalServerError().finish());
     };
-    //save image to disk if modified
-    if payload != obj.data && scale != 0 {
-        //save by width for quick caching
-        utils::write_to_file(payload.clone(), &obj.paths.modified)?;
-    }
+
+    obj.save(payload.clone())?;
+
     let res = HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::MaxAge(
             obj.origin.cache.max_age,
@@ -401,8 +357,11 @@ fn rustls_config() -> ClientConfig {
         .with_no_client_auth()
 }
 
-fn invalid_param(param: &str, value: String) -> HttpResponse {
-    let msg = format!("Received {}: {} is not allowed", param, value);
+fn invalid_value(param: &str, value: String) -> HttpResponse {
+    let msg = format!(
+        "Received value {} for param {} is not allowed",
+        value, param
+    );
     let json = json!({
         "status": 400,
         "error": msg
