@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imgopt
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: imgopt
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: enabled
+      labels:
+        app: imgopt
+    spec:
+      containers:
+      - image: 011737333588.dkr.ecr.us-east-1.amazonaws.com/imgopt:main-777c2a7
+        imagePullPolicy: IfNotPresent
+        name: imgopt
+        command: ["./imgopt"]
+        env:
+        - name: CONFIG_PATH
+          value: "/home/imgopt/config.toml"
+        - name: TWITTER_BEARER_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: twitter-creds
+              key: TWITTER_BEARER_TOKEN
+              optional: false
+        ports:
+        - containerPort: 3030
+          name: imgopt
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 250m
+          limits:
+            memory: 2Gi
+            cpu: 1000m
+        volumeMounts:
+        - name: imgopt-config
+          mountPath: /home/imgopt/config.toml
+          subPath: config.toml
+        - name: imgopt-data-efs
+          mountPath: /home/imgopt/data
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3030
+          initialDelaySeconds: 3
+          periodSeconds: 3
+      initContainers:
+      - name: fs-permission-update
+        image: busybox
+        command:
+        - chown
+        - "1000:1000"
+        - "/efs-fs"
+        volumeMounts:
+        - mountPath: /efs-fs
+          name: imgopt-data-efs
+      volumes:
+        - name: imgopt-config
+          configMap:
+            name: imgopt-config
+        - name: imgopt-data-efs
+          persistentVolumeClaim:
+            claimName:  efs-claim-imgopt-data
