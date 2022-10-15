@@ -123,8 +123,8 @@ impl Object {
         }
         Ok(())
     }
-    pub fn should_retry(&self) -> bool {
-        self.retries < 5
+    pub fn should_retry(&self, num: u32) -> bool {
+        self.retries < num
     }
     pub fn remove_file(&self) -> Result<HttpResponse> {
         std::fs::remove_file(&self.paths.base)?;
@@ -145,9 +145,9 @@ impl Object {
         client: &Data<awc::Client>,
         cfg: &Data<AppConfig>,
     ) -> Result<&Self, Box<dyn std::error::Error>> {
-        let hash = self.get_hash();
         self.retries += 1;
-        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, hash))?;
+        log::warn!("Updating retries to {}", self.retries);
+        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, self.get_hash()))?;
         let mut res = client
             .post(url.as_str())
             .append_header(("Accept", "application/json"))
@@ -171,8 +171,7 @@ impl Object {
         client: &Data<awc::Client>,
         cfg: &Data<AppConfig>,
     ) -> Result<&Self, Box<dyn std::error::Error>> {
-        let hash = self.get_hash();
-        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, hash))?;
+        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, self.get_hash()))?;
         let mut res = client
             .get(url.as_str())
             .append_header(("Accept", "application/json"))
@@ -222,7 +221,6 @@ impl Object {
                         self.get_url()?,
                         r
                     );
-                    self.update_retries(client, cfg).await?;
                     return Ok(self);
                 }
             }
@@ -232,7 +230,6 @@ impl Object {
                     self.get_url()?,
                     e
                 );
-                self.update_retries(client, cfg).await?;
                 return Ok(self);
             }
         };

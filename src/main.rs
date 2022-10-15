@@ -188,7 +188,7 @@ async fn get(
 
     if params.force.unwrap_or(false) || obj.data.is_empty() {
         obj.get_retries(&client, &cfg).await?;
-        if obj.should_retry() {
+        if obj.should_retry(cfg.max_retries) {
             obj.download(&client, &cfg).await?;
         } else {
             return Ok(obj.skip()?);
@@ -255,7 +255,7 @@ async fn fetch_object(
 
     if params.force.unwrap_or(false) || obj.data.is_empty() {
         obj.get_retries(&client, &cfg).await?;
-        if obj.should_retry() {
+        if obj.should_retry(cfg.max_retries) {
             obj.download(&client, &cfg).await?;
         } else {
             return Ok(obj.skip()?);

@@ -5,7 +5,7 @@ pub struct AppConfig {
     pub workers: usize,
     pub log_level: String,
     pub req_timeout: u64,
-    pub max_retries: u64,
+    pub max_retries: u32,
     pub max_body_size_bytes: usize,
     pub user_agent: String,
     pub health_endpoint: String,

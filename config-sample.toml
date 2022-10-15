@@ -26,7 +26,7 @@ twitter.cache.max_age = 3600
 #Ex: localhost:3030?url=https://yourdomain.com/testimage.png&width=100
 allow_any_origin=true
 
-kvstore_uri = "http://127.0.0.1:3031"
+kvstore_uri = "http://127.0.0.1:3050"
 #Number of retries when downloading an asset
 max_retries = 5
 
