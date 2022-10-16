@@ -124,7 +124,7 @@ impl Object {
                 "Max retries reached. Skipping"
 
         });
-        log::error!("Max retries reached for url: {}", self.get_url()?);
+        log::warn!("Max retries reached for url: {}", self.get_url()?);
         Ok(HttpResponse::BadRequest()
             .content_type("application/json")
             .body(serde_json::to_string(&json)?))
