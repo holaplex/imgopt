@@ -7,7 +7,7 @@ workers = 8
 #timeout when contacting listed origins
 req_timeout = 360
 #Limit response size from your origins
-max_body_size_bytes = 100000000 # 100 MB
+max_body_size_bytes = 200000000 # 200 MB
 #For load balancer liveness Probe
 health_endpoint = "/health"
 #User agent should be <name>/<version>
@@ -25,8 +25,8 @@ twitter.cache.max_age = 3600
 #Set to true will enable the query parameter ?url= to cache and process an asset found in the provided endpoint
 #Ex: localhost:3030?url=https://yourdomain.com/testimage.png&width=100
 allow_any_origin=true
-
-kvstore_uri = "http://127.0.0.1:3050"
+url_deny_list=["https://google.com/search", "http://localhost", "https://example.com/", "http://127.0.0.1", "https://arweave.net/000000000000000000000000000000000000000",  "https://arweave.net/%20#"]
+kvstore_uri = "http://127.0.0.1:5050"
 #Number of retries when downloading an asset
 max_retries = 5
 

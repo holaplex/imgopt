@@ -2,8 +2,8 @@ use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TwitterProfile {
-    #[serde(rename = "screen_name")]
-    pub handle: Option<String>,
+    #[serde(rename(serialize = "handle"))]
+    pub screen_name: Option<String>,
     #[serde(rename(
         serialize = "profile_image_url_lowres",
         deserialize = "profile_image_url_https"
