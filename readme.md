@@ -14,7 +14,7 @@ By default, only proxying images from `ipfs.io` service is allowed (This can be 
 
 ## Quick start
 ```bash
-docker run --network=host  mpwsh/imgopt:0.1.8
+docker run -p 3030:3030  mpwsh/imgopt:0.2.1
 ```
 Open [http://localhost:3030/health](http://localhost:3030/health) to validate your server is running. You should see **200 OK**.
 

@@ -7,7 +7,7 @@ use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
 };
 use awc::{http::header, http::header::CONTENT_TYPE, Client, Connector};
-use config::{AppConfig, CacheConfig, Origin};
+use config::{AppConfig, CacheConfig};
 use object::Object;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use serde_derive::Deserialize;
@@ -154,7 +154,19 @@ async fn get(
                     .body(serde_json::to_string(&json).unwrap()));
             }
         };
-        url
+        match cfg.validate_url(url.to_string()) {
+            Some(u) => {
+                log::info!("Skipping url in deny list: {}", u);
+                let json: Value = json!({
+                    "status": 400,
+                    "error": format!("url {} found in deny list. skipping", u)
+                });
+                return Ok(HttpResponse::BadRequest()
+                    .content_type("application/json")
+                    .body(serde_json::to_string(&json).unwrap()));
+        },
+            None => url,
+        }
     } else {
         let json = json!({
             "status": 400,
@@ -169,27 +181,10 @@ async fn get(
         Some(s) => s,
         None => return Ok(invalid_value("width", params.width.unwrap().to_string())),
     };
-    let mut segments = match url.path_segments().map(|c| c.collect::<Vec<_>>()) {
-        Some(p) => {
-            if p[0].is_empty() {
-                return Ok(invalid_value("url", url.to_string()));
-            } else {
-                p
-            }
-        }
-        None => return Ok(invalid_value("url", url.to_string())),
-    };
-    let filename = segments.first().unwrap().to_string();
-    let mut obj = Object::new(&filename);
-    let domain = url.host_str().unwrap().to_string();
-    let origin = Origin {
-        name: domain,
-        endpoint: format!("https://{}", url.host_str().unwrap()),
-        cache: CacheConfig::default(),
-    };
-    segments.remove(0);
-    obj.origin(&origin).scale(scale);
-    obj.rename(&segments.join("/"));
+    //let filename = segments.first().unwrap().to_string();
+    let mut obj = Object::from_url(url.to_string());
+    obj.scale(scale);
+    //obj.rename(&segments.join("/"));
     obj.set_paths(&cfg.storage_path)
         .try_open()?
         .create_dir(&cfg.storage_path)?;

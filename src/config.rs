@@ -14,7 +14,8 @@ pub struct AppConfig {
     pub allow_any_origin: bool,
     pub twitter: Option<TwitterConfig>,
     pub origins: Vec<Origin>,
-    pub skip_list: Option<Vec<String>>,
+    pub obj_deny_list: Option<Vec<String>>,
+    pub url_deny_list: Option<Vec<String>>,
     pub allowed_sizes: Option<Vec<u32>>,
 }
 
@@ -41,6 +42,15 @@ pub struct Origin {
 impl AppConfig {
     pub fn validate_origin(&self, origin: &str) -> Option<Origin> {
         self.origins.clone().into_iter().find(|o| o.name == origin)
+    }
+    pub fn validate_url(&self, url: String) -> Option<String> {
+        let denied = self.url_deny_list.clone().unwrap_or_default();
+        if denied.is_empty() {
+            None
+        } else {
+            let got = denied.into_iter().find(|u| url.contains(u));
+            got
+        }
     }
     pub fn validate_scale(&self, scale: Option<u32>) -> Option<u32> {
         let allowed = self.allowed_sizes.clone().unwrap_or_default();
@@ -73,7 +83,8 @@ impl Default for AppConfig {
             workers: 8,
             req_timeout: 15,
             max_retries: 5,
-            skip_list: None,
+            obj_deny_list: None,
+            url_deny_list: None,
             max_body_size_bytes: 60000000,
             log_level: "debug".to_string(),
             storage_path: "storage".to_string(),

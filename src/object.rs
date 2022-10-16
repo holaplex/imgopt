@@ -1,5 +1,5 @@
 use crate::{
-    config::{AppConfig, Origin},
+    config::{AppConfig, Origin, CacheConfig},
     img, json,
     utils::{self, Elapsed},
     Url, CONTENT_TYPE,
@@ -16,9 +16,10 @@ use std::str;
 
 #[derive(Clone)]
 pub struct Object {
+    pub name: String,
+    pub url: String,
     pub data: Vec<u8>,
     pub content_type: Mime,
-    pub name: String,
     pub origin: Origin,
     pub scale: u32,
     pub paths: Paths,
@@ -35,6 +36,7 @@ impl Object {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
+            url: String::new(),
             data: Vec::new(),
             content_type: "text/plain".parse::<Mime>().unwrap(),
             origin: Origin::default(),
@@ -47,6 +49,17 @@ impl Object {
             status: None,
             headers: None,
         }
+    }
+    pub fn from_url(url: String) -> Self {
+        let mut obj = Object::new(&url);
+        obj.url = url.clone();
+        obj.origin = Origin {
+        name: "misc".to_string(),
+        endpoint: url,
+        cache: CacheConfig::default(),
+        };
+        obj.name = obj.get_hash();
+        obj
     }
     pub fn create_dir(&self, path: &str) -> Result<()> {
         fs::create_dir_all(format!("{}/base/{}", path, self.origin.name))?;
@@ -72,6 +85,7 @@ impl Object {
     }
 
     pub fn rename(&mut self, path: &str) -> &mut Self {
+        self.url = format!("{}/{}/{}", self.origin.endpoint, self.name, path);
         self.name = format!("{}-_-{}", self.name, path.replace('/', "-_-"));
         self
     }
@@ -91,6 +105,7 @@ impl Object {
     }
     pub fn origin(&mut self, origin: &Origin) -> &mut Self {
         self.origin = origin.clone();
+        self.url = format!("{}/{}/", origin.endpoint, self.name);
         self
     }
     pub fn scale(&mut self, scale: u32) -> &mut Self {
@@ -98,7 +113,7 @@ impl Object {
         self
     }
     pub fn get_hash(&self) -> String {
-        sha1_smol::Sha1::from(&self.paths.base.as_bytes())
+        sha1_smol::Sha1::from(&self.url.as_bytes())
             .digest()
             .to_string()
     }
@@ -146,17 +161,16 @@ impl Object {
         cfg: &Data<AppConfig>,
     ) -> Result<&Self, Box<dyn std::error::Error>> {
         self.retries += 1;
-        log::warn!("Updating retries to {}", self.retries);
         let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, self.get_hash()))?;
         let mut res = client
             .post(url.as_str())
             .append_header(("Accept", "application/json"))
             .timeout(Duration::from_secs(cfg.req_timeout))
-            .send_json(&json!({"retries": self.retries}))
+            .send_json(&json!({"retries": self.retries, "url": self.get_url()?.to_string()}))
             .await?;
 
         if !res.status().is_success() && !res.status().is_client_error() {
-            log::warn!(
+            log::error!(
                 "Error while contacting KV store at {} | Response: {:#?}",
                 url,
                 res
@@ -192,11 +206,7 @@ impl Object {
         Ok(self)
     }
     fn get_url(&self) -> Result<Url> {
-        Ok(Url::parse(&format!(
-            "{}/{}",
-            self.origin.endpoint,
-            self.name.replace("-_-", "/")
-        ))?)
+        Ok(Url::parse(&self.url)?)
     }
     pub async fn download(
         &mut self,
@@ -216,10 +226,10 @@ impl Object {
                 if r.status().is_success() {
                     r
                 } else {
-                    log::warn!(
-                        "{} did not return expected object -- Response: {:#?}",
+                    log::error!(
+                        "Error in response: {} | Origin: {}",
+                        r.status(),
                         self.get_url()?,
-                        r
                     );
                     return Ok(self);
                 }

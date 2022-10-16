@@ -1,4 +1,3 @@
-#FROM rustlang/rust:nightly-buster-slim as build
 FROM messense/rust-musl-cross:x86_64-musl as build
 RUN rustup update beta && \
     rustup target add --toolchain beta x86_64-unknown-linux-musl
