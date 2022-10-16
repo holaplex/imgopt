@@ -1,26 +1,27 @@
 use serde_derive::{Deserialize, Serialize};
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TwitterProfile {
-    pub handle: String,
-    pub profile_image_url_lowres: String,
-    pub profile_image_url_highres: String,
-    pub banner_image_url: String,
-    pub description: String,
+    #[serde(rename = "screen_name")]
+    pub handle: Option<String>,
+    #[serde(rename(
+        serialize = "profile_image_url_lowres",
+        deserialize = "profile_image_url_https"
+    ))]
+    pub avatar_lowres: Option<String>,
+    #[serde(rename(
+        serialize = "profile_image_url_highres",
+        deserialize = "profile_image_url_https"
+    ))]
+    pub avatar_highres: Option<String>,
+    #[serde(rename(serialize = "banner_image_url", deserialize = "profile_banner_url"))]
+    pub banner: Option<String>,
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub errors: Option<Vec<ApiError>>,
 }
-
-impl TwitterProfile {
-    pub fn build(h: serde_json::Value) -> Self {
-        let image_url = &h[0]["profile_image_url_https"];
-        Self {
-            handle: h[0]["screen_name"].as_str().unwrap().to_string(),
-            profile_image_url_lowres: image_url.as_str().unwrap().to_string(),
-            profile_image_url_highres: image_url
-                .as_str()
-                .unwrap()
-                .to_string()
-                .replace("_normal", ""),
-            banner_image_url: h[0]["profile_banner_url"].as_str().unwrap().to_string(),
-            description: h[0]["description"].as_str().unwrap().to_string(),
-        }
-    }
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ApiError {
+    code: u32,
+    message: String,
 }

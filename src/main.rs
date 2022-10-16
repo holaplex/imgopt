@@ -61,18 +61,26 @@ async fn twitter(
             .body(serde_json::to_string(&json).unwrap()));
     };
 
-    //Get user data
-    let res = client
+    let mut res = client
         .post("https://api.twitter.com/1.1/users/lookup.json")
         .append_header(("Accept", "application/json"))
         .bearer_auth(&auth_token)
         .send_form(&[("screen_name", &handle)])
-        .await
-        .map_err(error::ErrorInternalServerError)?
-        .json::<serde_json::Value>()
         .await?;
 
-    let payload = serde_json::to_string_pretty(&TwitterProfile::build(res))?;
+    let data = res.json::<serde_json::Value>().await?;
+    let payload: String = match data["errors"].is_null() {
+        true => {
+            let mut p: TwitterProfile = serde_json::from_str(&data[0].to_string())?;
+            p.avatar_highres = Some(p.avatar_lowres.clone().unwrap().replace("_normal", ""));
+            serde_json::to_string(&p)?
+        }
+        false => {
+            return Ok(HttpResponse::BadRequest()
+                .content_type("application/json")
+                .body(serde_json::to_string(&data["errors"][0])?))
+        }
+    };
 
     let cache = if let Some(twitter_cfg) = cfg.twitter.clone() {
         twitter_cfg.cache
