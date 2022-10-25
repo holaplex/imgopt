@@ -132,7 +132,7 @@ async fn get(
     if !cfg.allow_any_origin {
         let json: Value = json!({
             "status": 400,
-            "error": "endpoint disabled. Add allow_any_origin=true to your config.toml to eanable"
+            "error": "endpoint disabled. Add allow_any_origin=true to your config.toml to enable"
         });
         return Ok(HttpResponse::BadRequest()
             .content_type("application/json")
@@ -176,20 +176,18 @@ async fn get(
             .content_type("application/json")
             .body(serde_json::to_string(&json).unwrap()));
     };
-
     let scale = match cfg.validate_scale(params.width) {
         Some(s) => s,
         None => return Ok(invalid_value("width", params.width.unwrap().to_string())),
     };
-    //let filename = segments.first().unwrap().to_string();
+
     let mut obj = Object::from_url(url.to_string());
     obj.scale(scale);
-    //obj.rename(&segments.join("/"));
     obj.set_paths(&cfg.storage_path)
         .try_open()?
         .create_dir(&cfg.storage_path)?;
 
-    if params.force.unwrap_or(false) || obj.data.is_empty() {
+    if params.force.unwrap_or(false) || url.query_pairs().count() != 0 || obj.data.is_empty() {
         obj.get_retries(&client, &cfg).await?;
         if obj.should_retry(cfg.max_retries) {
             obj.download(&client, &cfg).await?;

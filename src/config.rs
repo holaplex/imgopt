@@ -48,8 +48,7 @@ impl AppConfig {
         if denied.is_empty() {
             None
         } else {
-            let got = denied.into_iter().find(|u| url.contains(u));
-            got
+            denied.into_iter().find(|u| url.contains(u))
         }
     }
     pub fn validate_scale(&self, scale: Option<u32>) -> Option<u32> {

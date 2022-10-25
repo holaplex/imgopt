@@ -17,15 +17,14 @@ storage_path = "storage"
 #Limit which width scaling options are available (optional)
 allowed_sizes = [ 50, 100, 200, 400, 500, 600, 800, 700, 900, 1000, 1100, 1200, 1300, 1400, 1500 ]
 
-#Skip certain images from processing (optional - applies for all origins)
-#skip_list = ["banner.jpg"]
-
 #max age header for twitter (in seconds) (optional)
 twitter.cache.max_age = 3600
 #Set to true will enable the query parameter ?url= to cache and process an asset found in the provided endpoint
 #Ex: localhost:3030?url=https://yourdomain.com/testimage.png&width=100
 allow_any_origin=true
 url_deny_list=["https://google.com/search", "http://localhost", "https://example.com/", "http://127.0.0.1", "https://arweave.net/000000000000000000000000000000000000000",  "https://arweave.net/%20#"]
+
+#Smol kv https://github.com/mpwsh/smol-kv
 kvstore_uri = "http://127.0.0.1:5050"
 #Number of retries when downloading an asset
 max_retries = 5
