@@ -86,7 +86,7 @@ impl Object {
 
     pub fn rename(&mut self, path: &str) -> &mut Self {
         self.url = format!("{}/{}/{}", self.origin.endpoint, self.name, path);
-        self.name = format!("{}-_-{}", self.name, path.replace('/', "-_-"));
+        self.name = format!("{}-_-{}", self.name, path.replace('/', "-_-").replace(' ',"_"));
         self
     }
     pub fn set_paths(&mut self, path: &str) -> &mut Self {

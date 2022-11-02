@@ -41,7 +41,7 @@ pub fn read_from_file(path: &str) -> Result<Vec<u8>> {
 }
 
 pub fn guess_content_type(path: &str) -> Result<Mime, Box<dyn std::error::Error>> {
-    let mut proc = spawn_with_output!(file --mime-type --mime-encoding -0 ${path} | cut -d " " -f2 | tr -d ';')?;
+    let mut proc = spawn_with_output!(file --mime-type --mime-encoding -0 "${path}" | cut -d " " -f2 | tr -d ';')?;
     let output = proc.wait_with_output()?;
     Ok(output.parse::<Mime>()?)
 }
