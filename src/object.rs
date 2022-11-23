@@ -1,18 +1,22 @@
 use crate::{
-    config::{AppConfig, Origin, CacheConfig},
-    img, json,
+    config::{AppConfig, CacheConfig, Origin},
+    img,
+    routes::ErrorResponse,
     utils::{self, Elapsed},
-    Url, CONTENT_TYPE,
+    CONTENT_TYPE,
     {web::Data, HeaderMap, HttpResponse, StatusCode},
     {Duration, Instant},
 };
+use actix_web::error;
 use anyhow::Result;
 use image::ImageFormat;
 use mime::Mime;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::str;
+use url::Url;
 
 #[derive(Clone)]
 pub struct Object {
@@ -31,6 +35,11 @@ pub struct Object {
 pub struct Paths {
     pub base: String,
     pub modified: String,
+}
+#[derive(Serialize, Deserialize)]
+struct RetryCount {
+    url: String,
+    retries: u32,
 }
 impl Object {
     pub fn new(name: &str) -> Self {
@@ -54,9 +63,9 @@ impl Object {
         let mut obj = Object::new(&url);
         obj.url = url.clone();
         obj.origin = Origin {
-        name: "misc".to_string(),
-        endpoint: url,
-        cache: CacheConfig::default(),
+            name: "misc".to_string(),
+            endpoint: url,
+            cache: CacheConfig::default(),
         };
         obj.name = obj.get_hash();
         obj
@@ -86,7 +95,11 @@ impl Object {
 
     pub fn rename(&mut self, path: &str) -> &mut Self {
         self.url = format!("{}/{}/{}", self.origin.endpoint, self.name, path);
-        self.name = format!("{}-_-{}", self.name, path.replace('/', "-_-").replace(' ',"_"));
+        self.name = format!(
+            "{}-_-{}",
+            self.name,
+            path.replace('/', "-_-").replace(' ', "_")
+        );
         self
     }
     pub fn set_paths(&mut self, path: &str) -> &mut Self {
@@ -118,16 +131,8 @@ impl Object {
             .to_string()
     }
     pub fn skip(&self) -> Result<HttpResponse> {
-        let json = json!({
-            "status": 400,
-            "error":
-                "Max retries reached. Skipping"
-
-        });
-        log::warn!("Max retries reached for url: {}", self.get_url()?);
-        Ok(HttpResponse::BadRequest()
-            .content_type("application/json")
-            .body(serde_json::to_string(&json)?))
+        let msg = format!("Max retries reached for url: {}", self.get_url()?);
+        Ok(HttpResponse::BadRequest().json(ErrorResponse::new(400, &msg)))
     }
     pub fn is_valid(&self) -> bool {
         !matches!(self.content_type.as_ref(), "text/plain" | "text/html")
@@ -143,17 +148,11 @@ impl Object {
     }
     pub fn remove_file(&self) -> Result<HttpResponse> {
         std::fs::remove_file(&self.paths.base)?;
-        let json = json!({
-            "status": 400,
-            "error": format!(
-                "Object downloaded from {}/{} is not a supported asset",
-                self.origin.name,
-                self.name
-            )
-        });
-        Ok(HttpResponse::BadRequest()
-            .content_type("application/json")
-            .body(serde_json::to_string(&json)?))
+        let msg = format!(
+            "Object downloaded from {}/{} is not a supported asset",
+            self.origin.name, self.name
+        );
+        Ok(HttpResponse::BadRequest().json(ErrorResponse::new(400, &msg)))
     }
     pub async fn update_retries(
         &mut self,
@@ -161,23 +160,25 @@ impl Object {
         cfg: &Data<AppConfig>,
     ) -> Result<&Self, Box<dyn std::error::Error>> {
         self.retries += 1;
-        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, self.get_hash()))?;
-        let mut res = client
+        let hash = self.get_hash();
+        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, hash))?;
+        let retries = RetryCount {
+            url: self.get_url()?.to_string(),
+            retries: self.retries,
+        };
+
+        self.retries = client
             .post(url.as_str())
             .append_header(("Accept", "application/json"))
             .timeout(Duration::from_secs(cfg.req_timeout))
-            .send_json(&json!({"retries": self.retries, "url": self.get_url()?.to_string()}))
-            .await?;
+            .send_json(&retries)
+            .await
+            .map_err(error::ErrorInternalServerError)?
+            .json::<RetryCount>()
+            .await
+            .map_err(error::ErrorInternalServerError)?
+            .retries;
 
-        if !res.status().is_success() && !res.status().is_client_error() {
-            log::error!(
-                "Error while contacting KV store at {} | Response: {:#?}",
-                url,
-                res
-            );
-        }
-        let data = res.json::<serde_json::Value>().await?;
-        self.retries = data["retries"].to_string().parse::<u32>()?;
         Ok(self)
     }
     pub async fn get_retries(
@@ -197,8 +198,8 @@ impl Object {
                 self.update_retries(client, cfg).await?;
             }
             StatusCode::OK => {
-                let data = res.json::<serde_json::Value>().await?;
-                self.retries = data["retries"].to_string().parse::<u32>()?;
+                let data = res.json::<RetryCount>().await?;
+                self.retries = data.retries;
             }
             StatusCode::INTERNAL_SERVER_ERROR => log::error!("Error contacting kv store"),
             _ => log::warn!("Unexpected response from kv store"),

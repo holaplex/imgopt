@@ -1,4 +1,6 @@
+use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use serde_derive::{Deserialize, Serialize};
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub port: u16,
@@ -96,4 +98,20 @@ impl Default for AppConfig {
             origins: vec![Origin::default()],
         }
     }
+}
+
+pub fn rustls_config() -> ClientConfig {
+    let mut root_store = RootCertStore::empty();
+    root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+        OwnedTrustAnchor::from_subject_spki_name_constraints(
+            ta.subject,
+            ta.spki,
+            ta.name_constraints,
+        )
+    }));
+
+    rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(root_store)
+        .with_no_client_auth()
 }
