@@ -128,7 +128,7 @@ impl Object {
     }
 
     pub fn get_hash(&self) -> String {
-        sha1_smol::Sha1::from(&self.url.as_bytes())
+        sha1_smol::Sha1::from(self.url.as_bytes())
             .digest()
             .to_string()
     }

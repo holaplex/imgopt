@@ -15,12 +15,12 @@ use webp_animation::prelude::*;
 
 pub fn resize_webp(data: &[u8], width: u32, animated: bool) -> Result<Vec<u8>> {
     if !animated {
-        let img = image::load_from_memory(&data)?;
+        let img = image::load_from_memory(data)?;
         //early exit
         if width == img.width() {
             return Ok(data.to_vec());
         };
-        let (w, h) = calculate_dimensions(img.width() as u32, img.height() as u32, width);
+        let (w, h) = calculate_dimensions(img.width(), img.height(), width);
 
         let img = img.resize_exact(w, h, FilterType::Lanczos3);
         let encoder = webp::Encoder::from_image(&img).unwrap();
@@ -28,7 +28,7 @@ pub fn resize_webp(data: &[u8], width: u32, animated: bool) -> Result<Vec<u8>> {
         let bytes = memory.as_bytes();
         Ok(bytes.to_vec())
     } else {
-        let decoder = webp_animation::Decoder::new(&data)?;
+        let decoder = webp_animation::Decoder::new(data)?;
         //Get animation data
         let frames: Vec<_> = decoder.into_iter().collect();
         let timestamps: Vec<i32> = frames.iter().map(|f| f.timestamp()).collect();
@@ -40,7 +40,7 @@ pub fn resize_webp(data: &[u8], width: u32, animated: bool) -> Result<Vec<u8>> {
             return Ok(data.to_vec());
         };
 
-        let (w, h) = calculate_dimensions(img.0 as u32, img.1 as u32, width);
+        let (w, h) = calculate_dimensions(img.0, img.1, width);
 
         //init encoder
         let mut encoder = Encoder::new_with_options(
@@ -61,7 +61,7 @@ pub fn resize_webp(data: &[u8], width: u32, animated: bool) -> Result<Vec<u8>> {
             },
         )?;
 
-        for (i, frame) in webp_animation::Decoder::new(&data)?.into_iter().enumerate() {
+        for (i, frame) in webp_animation::Decoder::new(data)?.into_iter().enumerate() {
             let mut buff = Cursor::new(Vec::new());
             frame.into_image()?.write_to(&mut buff, ImageFormat::WebP)?;
             let img = image::load_from_memory(&buff.into_inner())?;
@@ -73,7 +73,7 @@ pub fn resize_webp(data: &[u8], width: u32, animated: bool) -> Result<Vec<u8>> {
                 .next()
                 .unwrap();
             let timestamp = timestamps.get(i).unwrap();
-            encoder.add_frame(&frame.data(), timestamp.clone())?;
+            encoder.add_frame(frame.data(), *timestamp)?;
         }
         let final_timestamp = *timestamps.last().unwrap() * frames.len() as i32;
         let bytes = encoder.finalize(final_timestamp)?;
@@ -115,7 +115,7 @@ pub fn mp4_to_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
 pub fn resize_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec<u8>> {
     let start = Instant::now();
     //try to retrieve width and height.
-    let mut file = fs::File::open(&input_path)?;
+    let mut file = fs::File::open(input_path)?;
     let mut data = Vec::new();
     file.read_to_end(&mut data)?;
     let mut reader = {

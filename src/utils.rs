@@ -25,7 +25,7 @@ impl fmt::Display for Elapsed {
 }
 pub fn write_to_file(data: Vec<u8>, path: &str) -> Result<()> {
     let start = Instant::now();
-    let mut file = File::create(&path)?;
+    let mut file = File::create(path)?;
     file.write_all(&data)?;
     log::info!("it took {} to save data to disk", Elapsed::from(&start));
     Ok(())
