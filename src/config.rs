@@ -58,7 +58,9 @@ impl AppConfig {
         if allowed.is_empty() || scale.is_none() {
             Some(scale.unwrap_or(0))
         } else {
-            allowed.into_iter().find(|s| s == &scale.unwrap_or(0))
+            allowed
+                .into_iter()
+                .find(|s| s == &scale.unwrap_or_default())
         }
     }
 }

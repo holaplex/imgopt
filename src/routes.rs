@@ -122,7 +122,6 @@ pub async fn get(
             "endpoint disabled. Add allow_any_origin=true to your config.toml to enable",
         )));
     }
-    //Validate url
     let url = if let Some(u) = &params.url {
         let u = match Url::parse(u) {
             Ok(u) => u,
@@ -166,12 +165,14 @@ pub async fn get(
         } else {
             return Ok(obj.skip()?);
         }
-    };
+    }
+
+    let valid_mod = std::path::Path::new(&obj.paths.modified).exists();
 
     let (content_type, payload) = if let Some(s) = obj.status {
         match s.is_success() && obj.is_valid() {
             true => {
-                if obj.scale == 0 {
+                if valid_mod || scale == 0 {
                     Ok((obj.content_type.clone(), obj.data.clone()))
                 } else {
                     obj.process(params.engine.unwrap_or(0))
@@ -235,10 +236,11 @@ pub async fn fetch_object(
         }
     };
 
+    let valid_mod = std::path::Path::new(&obj.paths.modified).exists();
     let (content_type, payload) = if let Some(s) = obj.status {
         match s.is_success() && obj.is_valid() {
             true => {
-                if obj.scale == 0 {
+                if obj.scale == 0 || valid_mod {
                     Ok((obj.content_type.clone(), obj.data.clone()))
                 } else {
                     obj.process(params.engine.unwrap_or(0))
