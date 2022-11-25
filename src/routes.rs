@@ -10,6 +10,7 @@ use actix_web::{
 };
 use awc::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{str, time::Duration};
 use url::Url;
 
@@ -54,30 +55,34 @@ pub async fn twitter(
         log::warn!("{}", msg);
         return Ok(HttpResponse::BadRequest().json(ErrorResponse::new(400, msg)));
     };
-
     let mut res = client
         .post("https://api.twitter.com/1.1/users/lookup.json")
         .append_header(("Accept", "application/json"))
         .bearer_auth(&auth_token)
         .send_form(&[("screen_name", &handle)])
         .await?
-        .json::<TwitterProfile>()
+        .json::<Vec<TwitterProfile>>()
         .await?;
 
-    if let Some(e) = res.errors {
+    let mut profile = if let Some(e) = &res[0].errors {
         return Ok(HttpResponse::BadRequest().json(&e[0]));
+    } else {
+        &mut res[0]
     };
 
-    res.avatar_highres = Some(res.avatar_lowres.clone().unwrap().replace("_normal", ""));
-    let cache = if let Some(twitter_cfg) = cfg.twitter.clone() {
-        twitter_cfg.cache
-    } else {
-        CacheConfig::default()
-    };
+    profile.avatar_highres = Some(
+        profile
+            .avatar_lowres
+            .clone()
+            .unwrap()
+            .replace("_normal", ""),
+    );
 
     Ok(HttpResponse::Ok()
-        .insert_header(CacheControl(vec![CacheDirective::MaxAge(cache.max_age)]))
-        .json(res))
+        .insert_header(CacheControl(vec![CacheDirective::MaxAge(
+            cfg.twitter.clone().unwrap_or_default().cache.max_age,
+        )]))
+        .json(profile))
 }
 
 #[get("/proxy/{origin}/{filename}")]
