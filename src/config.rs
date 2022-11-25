@@ -21,7 +21,7 @@ pub struct AppConfig {
     pub allowed_sizes: Option<Vec<u32>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct TwitterConfig {
     pub cache: CacheConfig,
 }
