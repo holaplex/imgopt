@@ -315,6 +315,14 @@ impl Object {
                 Ok(self.data.clone())
             }
         };
-        Ok((content_type, data?))
+        let payload = match data {
+                Ok(d) => d,
+                Err(e) => { 
+                error!("Error while processing obj from: {} - {} -- Base Path: {} - Mod path: {} | Falling back to original", self.url, e, self.paths.base, self.paths.modified);
+                self.data.clone()
+                }
+        };
+
+        Ok((content_type, payload))
     }
 }

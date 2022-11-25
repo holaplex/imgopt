@@ -117,13 +117,16 @@ pub fn resize_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
     //try to retrieve width and height.
     let mut file = fs::File::open(input_path)?;
     let mut data = Vec::new();
+    log::warn!("Resizing gif");
     file.read_to_end(&mut data)?;
+    log::warn!("init reader");
     let mut reader = {
         let mut options = gif::DecodeOptions::new();
         options.allow_unknown_blocks(true);
         options.read_info(file)?
     };
 
+    log::warn!("get dimensions");
     let (w, h) = match reader.read_next_frame() {
         Ok(Some(frame)) => (frame.width, frame.height),
         Ok(None) => (width as u16, width as u16),
