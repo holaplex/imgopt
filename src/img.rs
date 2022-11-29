@@ -9,7 +9,6 @@ use resize::{Pixel, Type::Triangle};
 use rgb::FromSlice;
 use std::fs;
 use std::io::Cursor;
-use std::io::Read;
 use std::time::Instant;
 use webp_animation::prelude::*;
 
@@ -114,15 +113,16 @@ pub fn mp4_to_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
 }
 pub fn resize_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec<u8>> {
     let start = Instant::now();
-    //try to retrieve width and height.
-    let mut file = fs::File::open(input_path)?;
-    let mut data = Vec::new();
-    file.read_to_end(&mut data)?;
-
+    let file = fs::File::open(input_path)?;
+    let og_gif = read_from_file(input_path);
     let mut reader = {
         let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::Indexed);
         options.allow_unknown_blocks(true);
-        options.read_info(file)?
+        match options.read_info(&file) {
+            Ok(r) => r,
+            Err(e) => { error!("Error decoding gif: {e}"); return og_gif} 
+        }
     };
 
     let (w, h) = match reader.read_next_frame() {
@@ -133,9 +133,10 @@ pub fn resize_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
             (width as u16, width as u16)
         }
     };
+
     //early exit
     if width == w as u32 {
-        return Ok(data.to_vec());
+        return og_gif
     };
     let (w2, h2) = calculate_dimensions(w as u32, h as u32, width);
 
@@ -145,7 +146,7 @@ pub fn resize_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
             "Unable to convert gif from path {} with run_cmd.. Falling back to original image",
             input_path
         );
-        read_from_file(input_path)
+        og_gif
     } else {
         info!("Resized gif to {} px in {}", width, Elapsed::from(&start));
         read_from_file(output_path)
@@ -186,18 +187,26 @@ pub fn is_webp_animated(data: &[u8]) -> bool {
 }
 pub fn resize_static(data: &[u8], width: u32, format: ImageFormat) -> Result<Vec<u8>> {
     let start = Instant::now();
-    let reader = Reader::with_format(Cursor::new(data), format);
-    let img = reader.decode()?;
-    //early exit
-    if width == img.width() {
-        return Ok(data.to_vec());
-    };
-    let (w, h) = calculate_dimensions(img.width(), img.height(), width);
 
-    let mut buff = Cursor::new(Vec::new());
-    img.thumbnail(w, h).write_to(&mut buff, format)?;
+    let bytes = match format {
+        ImageFormat::Png => resize_png(&data, width),
+        ImageFormat::WebP => resize_webp(&data, width, is_webp_animated(&data)),
+        _ => {
+            let mut buff = Cursor::new(Vec::new());
+            let reader = Reader::with_format(Cursor::new(data), format);
+            let img = reader.decode()?;
+            //early exit
+            if width == img.width() {
+                return Ok(data.to_vec());
+            };
+            let (w, h) = calculate_dimensions(img.width(), img.height(), width);
+
+            img.thumbnail(w, h).write_to(&mut buff, format)?;
+            Ok(buff.into_inner())
+        }
+    };
     info!("Resized to {} px in {}", width, Elapsed::from(&start));
-    Ok(buff.into_inner())
+    bytes
 }
 
 fn calculate_dimensions(imgw: u32, imgh: u32, width: u32) -> (u32, u32) {
