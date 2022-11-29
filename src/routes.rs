@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, CacheConfig};
+use crate::config::AppConfig;
 use crate::object::Object;
 use crate::tw::TwitterProfile;
 
@@ -10,7 +10,6 @@ use actix_web::{
 };
 use awc::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{str, time::Duration};
 use url::Url;
 

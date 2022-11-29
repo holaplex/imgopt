@@ -10,3 +10,4 @@ config.toml
 imgopt
 mp4-to-gif.sh
 .DS_Store
+Cargo.lock
