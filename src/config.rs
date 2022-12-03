@@ -15,12 +15,16 @@ pub struct AppConfig {
     pub kvstore_uri: String,
     pub allow_any_origin: bool,
     pub twitter: Option<TwitterConfig>,
+    pub cloudfront: Option<CloudfrontConfig>,
     pub origins: Vec<Origin>,
     pub obj_deny_list: Option<Vec<String>>,
     pub url_deny_list: Option<Vec<String>>,
     pub allowed_sizes: Option<Vec<u32>>,
 }
-
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+pub struct CloudfrontConfig {
+    pub distribution_id: String,
+}
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct TwitterConfig {
     pub cache: CacheConfig,
@@ -93,6 +97,7 @@ impl Default for AppConfig {
             storage_path: "storage".to_string(),
             kvstore_uri: "http://127.0.0.1:5050".to_string(),
             allowed_sizes: None,
+            cloudfront: None,
             allow_any_origin: true,
             twitter: None,
             health_endpoint: String::from("/health"),

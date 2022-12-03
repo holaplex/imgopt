@@ -118,10 +118,14 @@ pub fn resize_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
     let mut reader = {
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::Indexed);
+        options.set_memory_limit(::gif::MemoryLimit(8000 * 8000));
         options.allow_unknown_blocks(true);
         match options.read_info(&file) {
             Ok(r) => r,
-            Err(e) => { error!("Error decoding gif: {e}"); return og_gif} 
+            Err(e) => {
+                error!("Error decoding gif: {e}");
+                return og_gif;
+            }
         }
     };
 
@@ -136,7 +140,7 @@ pub fn resize_gif(input_path: &str, output_path: &str, width: u32) -> Result<Vec
 
     //early exit
     if width == w as u32 {
-        return og_gif
+        return og_gif;
     };
     let (w2, h2) = calculate_dimensions(w as u32, h as u32, width);
 
@@ -189,8 +193,8 @@ pub fn resize_static(data: &[u8], width: u32, format: ImageFormat) -> Result<Vec
     let start = Instant::now();
 
     let bytes = match format {
-        ImageFormat::Png => resize_png(&data, width),
-        ImageFormat::WebP => resize_webp(&data, width, is_webp_animated(&data)),
+        ImageFormat::Png => resize_png(data, width),
+        ImageFormat::WebP => resize_webp(data, width, is_webp_animated(data)),
         _ => {
             let mut buff = Cursor::new(Vec::new());
             let reader = Reader::with_format(Cursor::new(data), format);
