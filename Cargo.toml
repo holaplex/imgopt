@@ -33,6 +33,10 @@ sha1_smol = "1.0.0"
 derivative = "2.2.0"
 webp = { version = "0.2.2", git="https://github.com/jaredforth/webp" }
 webp-animation = { version = "0.7.0", features = ["image"]}
-gifski = "1.8.0"
-walkdir = "2.3.2"
-tempfile = "3.3.0"
+#gifski = "1.8.0"
+#walkdir = "2.3.2"
+#tempfile = "3.3.0"
+aws-config = "0.51.0"
+aws-sdk-cloudfront = "0.21.0"
+aws-smithy-types = "0.51.0"
+chrono = "0.4.23"

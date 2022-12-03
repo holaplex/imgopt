@@ -8,7 +8,7 @@ use crate::{
     {Duration, Instant},
 };
 use actix_web::error as actix_error;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use image::ImageFormat;
 use log::{debug, error, info, warn};
@@ -133,9 +133,32 @@ impl Object {
             .to_string()
     }
 
+    pub fn get_cf_path(&self) -> String {
+        match self.origin.name.as_ref() {
+            "misc" => format!("/?width={}&url={}", self.scale, self.origin.endpoint),
+            _ => {
+                let obj = self.name.split("-_-").collect::<Vec<&str>>();
+                let path = obj
+                    .get(1)
+                    .map(|p| format!("&path={}", p))
+                    .unwrap_or_default();
+                format!(
+                    "/{}/{}?width={}{}",
+                    self.origin.name,
+                    obj.first().expect("error while reading filename"),
+                    self.scale,
+                    path
+                )
+            }
+        }
+    }
     pub fn skip(&self) -> Result<HttpResponse> {
-        let msg = format!("Max retries reached for url: {}", self.get_url()?);
-        Ok(HttpResponse::BadRequest().json(ErrorResponse::new(400, &msg)))
+        let msg = format!(
+            "Max retries reached for url: [{}] {}  | ",
+            self.get_hash(),
+            self.get_url()?
+        );
+        Ok(HttpResponse::Forbidden().json(ErrorResponse::new(400, &msg)))
     }
 
     pub fn is_valid(&self) -> bool {
@@ -153,23 +176,50 @@ impl Object {
         self.retries < num
     }
 
-    pub fn remove_file(&self) -> Result<HttpResponse> {
-        std::fs::remove_file(&self.paths.base)?;
-        let msg = format!(
-            "Object downloaded from {}/{} is not a supported asset",
-            self.origin.name, self.name
-        );
-        Ok(HttpResponse::BadRequest().json(ErrorResponse::new(400, &msg)))
+    pub fn remove_paths(&self) -> Result<()> {
+        match std::fs::remove_file(&self.paths.base) {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
+            r => r.expect("failed to remove file"),
+        }
+        match std::fs::remove_file(&self.paths.modified) {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
+            r => r.expect("failed to remove file"),
+        }
+        Ok(())
     }
+    pub async fn reset_retries(
+        &mut self,
+        client: &Data<awc::Client>,
+        cfg: &Data<AppConfig>,
+    ) -> Result<&Self, Box<dyn std::error::Error>> {
+        self.retries = 0;
+        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, self.get_hash()))?;
+        let retries = RetryCount {
+            url: self.get_url()?.to_string(),
+            retries: self.retries,
+        };
 
+        self.retries = client
+            .post(url.as_str())
+            .append_header(("Accept", "application/json"))
+            .timeout(Duration::from_secs(cfg.req_timeout))
+            .send_json(&retries)
+            .await
+            .map_err(actix_error::ErrorInternalServerError)?
+            .json::<RetryCount>()
+            .await
+            .map_err(actix_error::ErrorInternalServerError)?
+            .retries;
+
+        Ok(self)
+    }
     pub async fn update_retries(
         &mut self,
         client: &Data<awc::Client>,
         cfg: &Data<AppConfig>,
     ) -> Result<&Self, Box<dyn std::error::Error>> {
         self.retries += 1;
-        let hash = self.get_hash();
-        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, hash))?;
+        let url = Url::parse(&format!("{}/api/{}", cfg.kvstore_uri, self.get_hash()))?;
         let retries = RetryCount {
             url: self.get_url()?.to_string(),
             retries: self.retries,
@@ -263,7 +313,12 @@ impl Object {
         );
         self.data = payload.as_ref().to_vec();
         self.headers = Some(res.headers().clone());
-        self.content_type = match self.headers.clone().unwrap().get(CONTENT_TYPE) {
+        self.content_type = match self
+            .headers
+            .clone()
+            .ok_or(anyhow!("Error while reading headers"))?
+            .get(CONTENT_TYPE)
+        {
             None => {
                 warn!("The response does not contain a Content-Type header.");
                 "application/octet-stream".parse::<mime::Mime>()?
@@ -325,4 +380,12 @@ impl Object {
 
         Ok((content_type, payload))
     }
+}
+
+pub fn invalid_value(param: &str, value: String) -> HttpResponse {
+    let msg = format!(
+        "Received value {} for param {} is not allowed",
+        value, param
+    );
+    HttpResponse::BadRequest().json(ErrorResponse::new(400, &msg))
 }

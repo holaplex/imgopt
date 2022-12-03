@@ -1,7 +1,7 @@
+use super::ErrorResponse;
 use crate::config::AppConfig;
-use crate::object::Object;
+use crate::object::{invalid_value, Object};
 use crate::tw::TwitterProfile;
-
 use actix_web::{
     error, get,
     http::header::{CacheControl, CacheDirective},
@@ -9,23 +9,10 @@ use actix_web::{
     HttpRequest, HttpResponse,
 };
 use awc::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{str, time::Duration};
 use url::Url;
 
-#[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-    status: u32,
-    error: String,
-}
-impl ErrorResponse {
-    pub fn new(status: u32, error: &str) -> Self {
-        Self {
-            status,
-            error: error.to_string(),
-        }
-    }
-}
 #[derive(Debug, Deserialize)]
 pub struct Params {
     width: Option<u32>,
@@ -182,7 +169,15 @@ pub async fn get(
                     obj.process(params.engine.unwrap_or(0))
                 }
             }
-            false => return Ok(obj.update_retries(&client, &cfg).await?.remove_file()?),
+            false => {
+                obj.remove_paths()?;
+                obj.update_retries(&client, &cfg).await?;
+                let msg = format!(
+                    "Object downloaded from {}/{} is not valid. Trying to proxy to origin",
+                    obj.origin.name, obj.name
+                );
+                return Ok(HttpResponse::InternalServerError().json(ErrorResponse::new(500, &msg)));
+            }
         }?
     } else {
         log::warn!("Error connecting to {}", obj.origin.name);
@@ -250,7 +245,15 @@ pub async fn fetch_object(
                     obj.process(params.engine.unwrap_or(0))
                 }
             }
-            false => return Ok(obj.update_retries(&client, &cfg).await?.remove_file()?),
+            false => {
+                obj.remove_paths()?;
+                obj.update_retries(&client, &cfg).await?;
+                let msg = format!(
+                    "Object downloaded from {}/{} is not valid. Trying to proxy to origin",
+                    obj.origin.name, obj.name
+                );
+                return Ok(HttpResponse::InternalServerError().json(ErrorResponse::new(500, &msg)));
+            }
         }?
     } else {
         log::warn!("Error connecting to {}", obj.origin.name);
@@ -266,12 +269,4 @@ pub async fn fetch_object(
         .content_type(content_type)
         .body(payload);
     Ok(res)
-}
-
-fn invalid_value(param: &str, value: String) -> HttpResponse {
-    let msg = format!(
-        "Received value {} for param {} is not allowed",
-        value, param
-    );
-    HttpResponse::BadRequest().json(ErrorResponse::new(400, &msg))
 }
