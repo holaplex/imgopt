@@ -2,12 +2,12 @@ name: Kubernetes deployment
 
 on:
   push:
-    branches: [ dev, main ]
+    branches: [ dev, main, rust-runner-test ]
 
 jobs:
   build:
     name: Building and Pushing Image
-    runs-on: self-hosted
+    runs-on: [ self-hosted, rust-runner]
 
     steps:
       - name: Checkout
