@@ -54,7 +54,6 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          target: ${{ github.event.repository.name }}
           push: true
           provenance: false
           platforms: linux/${{ matrix.arch }}
