@@ -10,7 +10,7 @@
 # Getting started
 
 Quickest way to start playing with `imgopt` is by launching the server via docker.
-By default, only proxying images from `ipfs.io` service is allowed (This can be changed by creating your own config. Use [config-sample.toml](config-sample.toml) as a guide to create your own `config.toml` file.
+By default, only proxying images from `ipfs.io` service is allowed (This can be changed by creating your own config. Use [config-sample.toml](config-sample.toml) as a guide to create your own `config.toml` file).
 
 ## Quick start
 ```bash
@@ -33,13 +33,13 @@ http://localhost:3030/ipfs/bafybeih26pot7dyvqkjabsx75fuypf6cy6derd6tojnfpctja75a
 
 [Click here to see it in action](http://localhost:3030/ipfs/bafybeih26pot7dyvqkjabsx75fuypf6cy6derd6tojnfpctja75a2j7uk4?width=600)
 
-Change the width to get the image size you want (Use a size from the `allowed_sizes` array in your config file. The following requests with same `width` will be served from cache directly and skip conversion entirely.
+Change the width to get the image size you want (Use a size from the `allowed_sizes` array in your config file). The following requests with same `width` will be served from cache directly and skip conversion entirely.
 To get the original image **remove** the `?width=` parameter.
 
 `MP4` files work the same way, but those will be converted to `GIF` automatically and then scaled down to the desired `width`.
 
 `imgopt` will create two folders inside the path specified in `storage_path` variable on the `config.toml` file to store the original and modified images and videos on start-up.
-If you will run `imgopt` from the container image, remember to mount a volume to persist the cached and original files in a folder on your control and send the modified config to the container as well.
+If you run `imgopt` from the container image, remember to mount a volume to persist the cached and original files in a folder on your control and send the modified config to the container as well.
 
 ```bash
 mkdir imgopt-data
@@ -72,7 +72,7 @@ If you want to use `imgopt` to cache API calls to twitter, you need to set up th
 
 # Building from source
 The code in this repository can be built using `cargo` without any further dependencies. Just clone the repo and execute `cargo build --release`.
-If you only need `JPEG` and `PNG` resizing you can stop installing things here and just just run the server located in `./target/release/`.
+If you only need `JPEG` and `PNG` resizing you can stop installing things here and just run the server located in `./target/release/`.
 If `MP4` and `GIF` are required on your setup then carry on.
 
 Keep in mind that (as mentioned above) `ffmpeg`, `gifsicle` and `gifski` are required to trigger some conversions, which have their own dependencies.
